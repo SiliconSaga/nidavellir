@@ -65,17 +65,20 @@ Vegvísir acts as the operator that bridges the gap between individual Game Serv
 *   **Safety**: Ensures atomic updates and prevents "fighting" over the listener list.
 
 ## Usage Workflow
+ 
+ 1.  **Layer 4 (The Fundamentals)**:
+     *   ArgoCD installs Traefik (Gateway Class).
+     *   ArgoCD installs Cert-Manager & `letsencrypt-gateway` Issuer.
+     
+ 2.  **Layer 5 (Platform Services)**:
+     *   ArgoCD installs Vegvísir Operator.
+     *   ArgoCD applies the shared `Gateway` manifest (the "Root Gateway").
 
-1.  **Platform Layer (ArgoCD)**:
-    *   Installs Traefik (Gateway Class).
-    *   Installs Cert-Manager & Issuers.
-    *   Installs Vegvísir Operator.
-    *   Applies the shared `Gateway` manifest.
-
-2.  **Application Layer (Crossplane)**:
+2.  **Application Layer (Crossplane/Agones)**:
     *   Developer commits a `GameServerStack` claim.
-    *   Crossplane provisions the Pod and Service.
-    *   Crossplane creates a `UDPRoute`.
+    *   Crossplane/Agones provisions the Pod and Service.
+    *   Crossplane/Agones creates a `UDPRoute`.
+    *   TODO: Figure out more exactly what Crossplane does vs Agones. It is probably Agones running the show in game server land.
 
 3.  **Runtime**:
     *   Vegvísir Operator sees the `UDPRoute` -> Updates Gateway listeners.
