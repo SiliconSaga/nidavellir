@@ -163,6 +163,46 @@ spec:
   - my-app.cmdbee.org
 ```
 
+## Transitioning to GitHub
+
+During bootstrap, ArgoCD pulls Nidavellir from the internal Gitea mirror (same as Nordri).
+Once the cluster is stable and Vegvísir is healthy, you can transition ArgoCD to pull
+future updates directly from the GitHub source — so a push to GitHub is all you need for
+ongoing GitOps.
+
+### Step 1: Add GitHub credentials to ArgoCD
+
+Create an ArgoCD repository credential Secret. Use a GitHub personal access token (PAT)
+with `Contents: read` scope (classic: `repo`):
+
+```bash
+kubectl create secret generic nidavellir-github-repo \
+  -n argocd \
+  --from-literal=type=git \
+  --from-literal=url=https://github.com/SiliconSage/nidavellir.git \
+  --from-literal=username=token \
+  --from-literal=password=<your-github-pat>
+
+kubectl label secret nidavellir-github-repo -n argocd \
+  argocd.argoproj.io/secret-type=repository
+```
+
+### Step 2: Update the Vegvísir Application source
+
+In the **Nordri** repo, edit `platform/argocd/vegvisir-app.yaml` and change `repoURL`:
+
+```yaml
+repoURL: 'https://github.com/SiliconSage/nidavellir.git'
+```
+
+Commit and push to the Nordri Gitea. ArgoCD picks up the change, re-registers the
+Vegvísir Application against GitHub, and Nidavellir changes from GitHub are live.
+
+### Notes
+
+- The same swap pattern can be applied to the Nordri repo itself later.
+- The internal Gitea remains available as a fallback if GitHub is unreachable.
+
 ## Components
 
 *(Vegvísir Operator — custom controller for shared Gateway UDP port management — TBD)*
