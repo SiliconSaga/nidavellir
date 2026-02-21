@@ -34,9 +34,11 @@ We adopt a "split-brain" issuer strategy to allow robust experimentation without
 *   **Issuer Name**: `letsencrypt-gateway`
 *   **Solver**: `http01` using `gatewayHTTPRoute`.
 *   **Configuration**:
-    *   Annotation placed on the **Gateway** resource, not the App/Route.
-    *   `cert-manager.io/cluster-issuer: letsencrypt-gateway`
-    *   Cert-manager detects listeners and automatically configures Routes for challenges.
+    *   The solver is defined in the `ClusterIssuer`, not on the Gateway itself.
+    *   When a `Certificate` references this issuer, cert-manager creates a temporary
+        `HTTPRoute` that routes the ACME HTTP-01 challenge through the Traefik Gateway's
+        port-80 listener. No annotations on the Gateway are needed.
+    *   Prerequisite: Gateway API CRDs must be installed on the cluster (see README).
 
 ### Homelab: Tunnel Strategy (Deferred)
 *   **Current State**: Defer local cert management.
@@ -65,14 +67,18 @@ Vegvísir acts as the operator that bridges the gap between individual Game Serv
 *   **Safety**: Ensures atomic updates and prevents "fighting" over the listener list.
 
 ## Usage Workflow
- 
- 1.  **Layer 4 (The Fundamentals)**:
-     *   ArgoCD installs Traefik (Gateway Class).
-     *   ArgoCD installs Cert-Manager & `letsencrypt-gateway` Issuer.
-     
- 2.  **Layer 5 (Platform Services)**:
-     *   ArgoCD installs Vegvísir Operator.
-     *   ArgoCD applies the shared `Gateway` manifest (the "Root Gateway").
+
+ 1.  **Pre-flight (one-time, manual)**:
+     *   Install Gateway API CRDs on the cluster (`kubectl apply -f ...standard-install.yaml`).
+
+ 2.  **Layer 4 (Nordri — The Fundamentals)**:
+     *   ArgoCD installs Traefik → GatewayClass `traefik` is registered.
+
+ 3.  **Layer 5 (Vegvísir — Platform Services)**:
+     *   ArgoCD installs cert-manager (fresh clusters only; skip if pre-existing).
+     *   ArgoCD applies the shared `Gateway` manifest → LoadBalancer IP provisioned.
+     *   ArgoCD applies `letsencrypt-gateway` ClusterIssuer.
+     *   ArgoCD installs Vegvísir Operator (TBD).
 
 2.  **Application Layer (Crossplane/Agones)**:
     *   Developer commits a `GameServerStack` claim.

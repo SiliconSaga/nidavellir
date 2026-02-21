@@ -1,0 +1,45 @@
+# Shared Traefik Gateway resource.
+#
+# Nordri installs the Traefik Helm chart (registering GatewayClass: traefik).
+# This resource creates the actual Gateway instance, which causes Traefik to
+# provision a LoadBalancer. Point cmdbee.org DNS at the resulting external IP.
+#
+# Prerequisites:
+#   - Gateway API CRDs installed (see vegvisir/README.md)
+#   - Traefik deployed by Nordri (GatewayClass traefik must exist)
+#
+# Retrieve the LoadBalancer IP after sync:
+#   kubectl get gateway traefik-gateway -n kube-system \
+#     -o jsonpath='{.status.addresses[0].value}'
+#
+# Sync-wave 5: after Traefik (wave 1), before cert-manager and ClusterIssuer (wave 10+).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: traefik-gateway
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  gatewayClassName: traefik
+  listeners:
+  - name: web
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: websecure
+    port: 443
+    protocol: HTTPS
+    allowedRoutes:
+      namespaces:
+        from: All
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        # Created by cert-manager once the first Certificate using letsencrypt-gateway
+        # is issued. Traefik falls back to a self-signed cert until this secret exists.
+        name: traefik-gateway-default-cert
+        namespace: kube-system
