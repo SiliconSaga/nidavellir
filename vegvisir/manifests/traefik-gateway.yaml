@@ -1,18 +1,17 @@
-# Shared Traefik Gateway resource.
+# Shared Traefik Gateway resource — owned by Vegvísir.
 #
-# Nordri installs the Traefik Helm chart (registering GatewayClass: traefik).
-# This resource creates the actual Gateway instance, which causes Traefik to
-# provision a LoadBalancer. Point cmdbee.org DNS at the resulting external IP.
+# Nordri installs the Traefik Helm chart (registering GatewayClass: traefik) with
+# gateway.enabled=false so it does not auto-create a Gateway. This resource owns
+# that responsibility, co-located here with cert-manager and ClusterIssuers.
+#
+# Creates the LoadBalancer on GKE. Retrieve the external IP after sync:
+#   kubectl get svc traefik -n kube-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 #
 # Prerequisites:
-#   - Gateway API CRDs installed (see vegvisir/README.md)
+#   - Gateway API CRDs installed
 #   - Traefik deployed by Nordri (GatewayClass traefik must exist)
 #
-# Retrieve the LoadBalancer IP after sync:
-#   kubectl get gateway traefik-gateway -n kube-system \
-#     -o jsonpath='{.status.addresses[0].value}'
-#
-# Sync-wave 5: after Traefik (wave 1), before cert-manager and ClusterIssuer (wave 10+).
+# Sync-wave 5: before cert-manager (wave 10) and ClusterIssuers (wave 15).
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
