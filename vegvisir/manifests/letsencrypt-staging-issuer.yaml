@@ -1,0 +1,32 @@
+# Staging ClusterIssuer for validating the cert-manager + Gateway ACME pipeline
+# without consuming Let's Encrypt production rate limits.
+#
+# Use this issuer first when testing DNS + ACME on a new cluster.
+# Staging certs are NOT trusted by browsers but the issuance flow is identical.
+# Once the pipeline is confirmed working, switch to the letsencrypt-gateway issuer.
+#
+# Prerequisites:
+#   - Gateway API CRDs installed
+#   - traefik-gateway Gateway resource applied (wave 5)
+#   - cert-manager installed and healthy (wave 10)
+#
+# Sync-wave 15: after cert-manager is ready.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-gateway-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+spec:
+  acme:
+    email: siliconsage@gmail.com
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-gateway-staging-account-key
+    solvers:
+    - http01:
+        gatewayHTTPRoute:
+          parentRefs:
+          - name: traefik-gateway
+            namespace: kube-system
+            kind: Gateway

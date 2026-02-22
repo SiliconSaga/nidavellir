@@ -1,11 +1,11 @@
-# ClusterIssuer for domains pointing at the Traefik Gateway LoadBalancer IP.
+# Production ClusterIssuer for domains pointing at the Traefik Gateway LoadBalancer IP.
 #
 # Uses cert-manager's gatewayHTTPRoute HTTP-01 solver. When a Certificate
 # referencing this issuer is created, cert-manager temporarily creates an HTTPRoute
 # that routes the ACME challenge through the Traefik Gateway's port-80 listener.
 #
-# Use this issuer for cmdbee.org (and any future domains pointing at the Traefik LB).
-# The existing letsencrypt-prod issuer (nginx) continues to serve siliconsaga.org.
+# Use letsencrypt-gateway-staging to validate the pipeline on a new cluster first.
+# Switch to this issuer once DNS is confirmed working and you're ready for trusted certs.
 #
 # Prerequisites:
 #   - Gateway API CRDs installed

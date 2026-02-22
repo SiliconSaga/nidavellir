@@ -1,13 +1,16 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Default resources: Gateway + ClusterIssuer.
-# These are applied on all clusters (existing or fresh).
+# Vegvísir resources — deployed on all clusters.
 #
-# cert-manager-app.yaml is intentionally excluded here.
-# Apply it separately on fresh clusters that don't have cert-manager pre-installed:
-#   kubectl apply -f vegvisir/manifests/cert-manager-app.yaml
+# Sync-wave ordering:
+#   wave 5:  traefik-gateway.yaml              — Traefik Gateway resource
+#   wave 10: cert-manager-app.yaml             — cert-manager Helm app
+#   wave 15: letsencrypt-staging-issuer.yaml   — staging ClusterIssuer (test first)
+#   wave 15: letsencrypt-gateway-issuer.yaml   — production ClusterIssuer
 #
 resources:
   - traefik-gateway.yaml
+  - cert-manager-app.yaml
+  - letsencrypt-staging-issuer.yaml
   - letsencrypt-gateway-issuer.yaml
