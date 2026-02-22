@@ -1,0 +1,41 @@
+# ArgoCD Application-of-Applications for Demicracy (Tier 3: End-User Platform).
+#
+# Points ArgoCD at demicracy/apps/ in the Demicracy repo. That directory will
+# contain one Application manifest per component (Backstage, Tafl, etc.).
+#
+# This file lives in Nidavellir — NOT in Nordri. Nordri knows only about
+# Nidavellir; Nidavellir is the forge that deploys Demicracy. Each tier holds
+# the reference to the tier above it.
+#
+# STATUS: PLACEHOLDER — the Demicracy repo does not yet have an apps/ directory
+# or deployable Kubernetes manifests. Uncomment in nidavellir/apps/kustomization.yaml
+# when the Demicracy repo is ready to be managed via GitOps.
+#
+# Source: internal Gitea during bootstrap (bootstrap.sh must mirror demicracy repo).
+# Swap to GitHub URL using the same transition procedure as Vegvísir.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demicracy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/demicracy.git'
+    targetRevision: HEAD
+    path: apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
