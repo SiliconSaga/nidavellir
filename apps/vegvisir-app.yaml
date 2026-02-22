@@ -1,0 +1,41 @@
+# ArgoCD Application for Vegvísir (Nidavellir routing & TLS layer).
+#
+# Deploys the Traefik Gateway resource and letsencrypt-gateway ClusterIssuer
+# from this repo's vegvisir/manifests/ directory. These are the platform routing
+# and TLS primitives that sit on top of Traefik (deployed by Nordri/layer4).
+#
+# cert-manager is NOT deployed here — it is either pre-installed on the cluster
+# (existing GKE) or installed separately via vegvisir/manifests/cert-manager-app.yaml.
+#
+# Sync-wave 5: so the Traefik GatewayClass has time to register before the
+# Gateway resource is applied. ArgoCD self-heals if Traefik is not yet ready.
+#
+# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
+# is stable, swap repoURL to GitHub and add an ArgoCD repository credential Secret.
+# See "Transitioning to GitHub" in vegvisir/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vegvisir
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
+    targetRevision: HEAD
+    path: vegvisir/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true

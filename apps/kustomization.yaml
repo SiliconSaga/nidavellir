@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Nidavellir app-of-apps: ArgoCD Applications for all platform components.
+# ArgoCD scans this directory via the nidavellir-apps Application in Nordri.
+#
+# Add a new Application here when onboarding a new platform component.
+# Each Application should use the internal Gitea URL during bootstrap;
+# swap to GitHub per the transition procedure in vegvisir/README.md.
+resources:
+  - vegvisir-app.yaml
+  # mimir-app.yaml       # TODO: add when Mimir GitOps wiring is ready
+  # heimdall-app.yaml    # TODO: add when Heimdall is deployed
+  # keycloak-app.yaml    # TODO: add when Keycloak is deployed
+  # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
+  # openbao-app.yaml     # TODO: add when OpenBAO is deployed
