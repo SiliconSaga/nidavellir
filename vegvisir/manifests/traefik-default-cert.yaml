@@ -22,6 +22,8 @@ metadata:
     argocd.argoproj.io/sync-wave: "12"
 spec:
   secretName: traefik-gateway-default-cert
+  privateKey:
+    rotationPolicy: Always
   issuerRef:
     name: selfsigned
     kind: ClusterIssuer
