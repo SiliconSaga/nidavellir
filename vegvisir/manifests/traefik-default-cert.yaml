@@ -1,0 +1,30 @@
+# Bootstrap TLS certificate for the Traefik Gateway's websecure listener.
+#
+# The Gateway's certificateRef points to this secret. Without it the Gateway API
+# controller marks the websecure listener as invalid (ResolvedRefs: False), which
+# makes ArgoCD consider the Gateway degraded and blocks further sync waves.
+#
+# This Certificate uses the selfsigned ClusterIssuer to produce a self-signed cert
+# immediately on first sync. Traefik serves this cert as the HTTPS fallback for any
+# connection that doesn't match a more specific per-application certificate.
+#
+# Per-application HTTPS is handled by separate Certificate resources referencing
+# letsencrypt-gateway-staging or letsencrypt-gateway — those replace this cert
+# for specific hostnames via SNI, leaving this as the catch-all fallback.
+#
+# Sync-wave 12: after selfsigned ClusterIssuer (wave 11), before Gateway (wave 13).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: traefik-gateway-default-cert
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+spec:
+  secretName: traefik-gateway-default-cert
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+  commonName: traefik-gateway-default
+  dnsNames:
+    - localhost

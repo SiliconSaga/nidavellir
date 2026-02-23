@@ -1,0 +1,16 @@
+# Minimal self-signed ClusterIssuer using cert-manager's built-in SelfSigned type.
+#
+# Used only to bootstrap the traefik-gateway-default-cert secret so the Gateway's
+# websecure listener has a valid TLS secret on first sync. The cert it produces is
+# self-signed and not trusted by browsers — it is replaced per-application by
+# certificates issued via letsencrypt-gateway or letsencrypt-gateway-staging.
+#
+# Sync-wave 11: after cert-manager (wave 10), before the default cert (wave 12).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+spec:
+  selfSigned: {}

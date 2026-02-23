@@ -11,14 +11,17 @@
 #   - Gateway API CRDs installed
 #   - Traefik deployed by Nordri (GatewayClass traefik must exist)
 #
-# Sync-wave 5: before cert-manager (wave 10) and ClusterIssuers (wave 15).
+# Sync-wave 13: after the traefik-gateway-default-cert secret is created (wave 12),
+# so the websecure listener's certificateRef resolves immediately and the Gateway
+# becomes Programmed on first apply. The LB IP is unaffected — it comes from the
+# Traefik Helm service created at bootstrap, not from this Gateway resource.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: traefik-gateway
   namespace: kube-system
   annotations:
-    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-wave: "13"
 spec:
   gatewayClassName: traefik
   listeners:
@@ -38,7 +41,7 @@ spec:
       mode: Terminate
       certificateRefs:
       - kind: Secret
-        # Created by cert-manager once the first Certificate using letsencrypt-gateway
-        # is issued. Traefik falls back to a self-signed cert until this secret exists.
+        # Created at wave 12 by traefik-default-cert.yaml (self-signed bootstrap cert).
+        # Replaced per-hostname by LetsEncrypt certs via SNI as applications are deployed.
         name: traefik-gateway-default-cert
         namespace: kube-system

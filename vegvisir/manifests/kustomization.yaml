@@ -4,13 +4,17 @@ kind: Kustomization
 # Vegvísir resources — deployed on all clusters.
 #
 # Sync-wave ordering:
-#   wave 5:  traefik-gateway.yaml              — Traefik Gateway resource
 #   wave 10: cert-manager-app.yaml             — cert-manager Helm app
+#   wave 11: selfsigned-issuer.yaml            — bootstrap SelfSigned ClusterIssuer
+#   wave 12: traefik-default-cert.yaml         — self-signed cert creates the gateway secret
+#   wave 13: traefik-gateway.yaml              — Gateway (secret now exists, listeners valid)
 #   wave 15: letsencrypt-staging-issuer.yaml   — staging ClusterIssuer (test first)
 #   wave 15: letsencrypt-gateway-issuer.yaml   — production ClusterIssuer
 #
 resources:
-  - traefik-gateway.yaml
   - cert-manager-app.yaml
+  - selfsigned-issuer.yaml
+  - traefik-default-cert.yaml
+  - traefik-gateway.yaml
   - letsencrypt-staging-issuer.yaml
   - letsencrypt-gateway-issuer.yaml
