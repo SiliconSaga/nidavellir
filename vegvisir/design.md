@@ -48,7 +48,60 @@ We adopt a "split-brain" issuer strategy to allow robust experimentation without
     *   Homelab receives decrypted HTTP traffic through the tunnel.
     *   **Benefit**: Removes the need for DNS-01 challenges or exposing local ports (avoiding Namecheap IP whitelisting issues).
 
-## 3. The Vegvísir Operator
+## 3. DNS Automation (TODO)
+
+**Goal**: Fully automate the DNS A record creation and cert issuance for any domain
+pointed at the Traefik Gateway, so a user with a NameCheap account and API credentials
+gets zero-touch domain wiring after bootstrap.
+
+### Current state
+The bootstrap script prints the Traefik LB IP and tells the user to go set A records
+manually at their registrar. cert-manager then uses HTTP-01, which requires DNS to
+already be propagated before cert issuance can begin.
+
+### Target architecture (GKE + NameCheap)
+
+**Problem: NameCheap API IP whitelisting**
+NameCheap's API requires callers to be from a pre-whitelisted IP. GKE node IPs are
+ephemeral and change on cluster reset — making whitelisting impractical without a
+stable egress IP.
+
+**Solution: Cloud NAT with a static egress IP**
+Add a Cloud NAT configuration in `gke-provision.sh` that routes all cluster outbound
+traffic through a reserved static IP. The user whitelists that one IP in NameCheap
+once; it survives cluster resets.
+
+```
+gke-provision.sh create  →  also reserves a static IP + creates Cloud NAT
+gke-provision.sh delete  →  also releases the static IP
+```
+
+**ExternalDNS for A record automation**
+Deploy ExternalDNS as a Nidavellir/Vegvísir component. It watches the Traefik
+LoadBalancer Service and automatically creates/updates A records via the NameCheap
+API. Provider: ExternalDNS 0.14+ supports third-party webhook providers; a community
+NameCheap webhook exists (evaluate maintenance status before adopting).
+
+Credentials: NameCheap API key + username stored as a Secret (OpenBAO long-term).
+
+**DNS-01 challenge (optional upgrade)**
+Switch cert-manager from HTTP-01 to DNS-01 using the same NameCheap API credentials.
+Benefits:
+- Cert issuance no longer depends on DNS propagation timing
+- Wildcard certificates become possible (`*.cmdbee.org`)
+- The ClusterIssuer solver changes from `gatewayHTTPRoute` to `webhook` (NameCheap)
+
+DNS-01 is more powerful but adds a second NameCheap API dependency on the cert-manager
+side; evaluate whether ExternalDNS alone (plus HTTP-01) is sufficient first.
+
+### Open questions
+- Maintain the Cloud NAT static IP across cluster resets, or require a one-time setup
+  step outside of gke-provision.sh?
+- Which NameCheap ExternalDNS webhook to adopt? Needs maintenance/activity check.
+- Make NameCheap automation optional (flag in bootstrap or separate step) so the
+  flow still works for users with other registrars or manual DNS preferences.
+
+## 4. The Vegvísir Operator
 
 A custom Kubernetes controller is required to support the "Composed" architecture (Crossplane) without conflict.
 
