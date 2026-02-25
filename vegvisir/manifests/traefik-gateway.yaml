@@ -40,7 +40,8 @@ spec:
     tls:
       mode: Terminate
       certificateRefs:
-      - kind: Secret
+      - group: ""
+        kind: Secret
         # Created at wave 12 by traefik-default-cert.yaml (self-signed bootstrap cert).
         # Replaced per-hostname by LetsEncrypt certs via SNI as applications are deployed.
         name: traefik-gateway-default-cert

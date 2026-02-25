@@ -25,8 +25,9 @@ spec:
   privateKey:
     rotationPolicy: Always
   issuerRef:
-    name: selfsigned
+    group: cert-manager.io
     kind: ClusterIssuer
+    name: selfsigned
   commonName: traefik-gateway-default
   dnsNames:
     - localhost
