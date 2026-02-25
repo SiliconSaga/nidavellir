@@ -1,0 +1,8 @@
+# nidavellir/kuttl-test.yaml
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+testDirs:
+  - tests/e2e
+timeout: 120
+parallel: 1
+skipDelete: false

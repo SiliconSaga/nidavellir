@@ -1,0 +1,66 @@
+# nidavellir/tests/e2e/vegvisir/00-assert.yaml
+# Assert nidavellir-owned ArgoCD applications are Synced+Healthy
+# and all cert-manager issuers are Ready.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nidavellir
+  namespace: argocd
+status:
+  health:
+    status: Healthy
+  sync:
+    status: Synced
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vegvisir
+  namespace: argocd
+status:
+  health:
+    status: Healthy
+  sync:
+    status: Synced
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+status:
+  health:
+    status: Healthy
+  sync:
+    status: Synced
+---
+# Bootstrap self-signed cert must be Ready (Gateway depends on it)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: traefik-gateway-default-cert
+  namespace: kube-system
+status:
+  conditions:
+  - type: Ready
+    status: "True"
+---
+# Staging issuer Ready (used by whoami e2e and cert tests)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-gateway-staging
+status:
+  conditions:
+  - type: Ready
+    status: "True"
+---
+# Production issuer Ready
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-gateway
+status:
+  conditions:
+  - type: Ready
+    status: "True"
