@@ -1,6 +1,7 @@
 # nidavellir/kuttl-test-e2e.yaml
 # Domain-dependent e2e test — requires DNS A records pointing at the Traefik LB IP.
-# Set WHOAMI_DOMAIN env var to override the test domain (default: test.cmdbee.org).
+# WHOAMI_DOMAIN controls the hostname used for the HTTP routing check (step 02).
+# It does NOT change the cert domain — that is hardcoded in demos/whoami/whoami.yaml.
 # Run: WHOAMI_DOMAIN=test.cmdbee.org kubectl kuttl test --config kuttl-test-e2e.yaml
 #
 # Uses letsencrypt-gateway-staging to avoid consuming production rate limits.

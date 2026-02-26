@@ -1,4 +1,4 @@
-# nidavellir/tests/e2e/vegvisir/00-assert.yaml
+# nidavellir/tests/platform/vegvisir/00-assert.yaml
 # Assert nidavellir-owned ArgoCD applications are Synced+Healthy
 # and all cert-manager issuers are Ready.
 apiVersion: argoproj.io/v1alpha1
