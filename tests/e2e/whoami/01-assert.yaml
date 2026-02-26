@@ -1,0 +1,17 @@
+# nidavellir/tests/e2e/whoami/01-assert.yaml
+# Assert the staging certificate issued successfully.
+# kuttl polls this until Ready=True or timeout (300s configured in kuttl-test-e2e.yaml).
+# A Ready cert proves: ClusterIssuer contacted ACME, HTTP-01 challenge succeeded,
+# cert-manager created the TLS secret.
+#
+# When Ready, cert-manager reports exactly one condition (Ready=True).
+# The Issuing condition is only present during issuance and disappears on success.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: whoami-cert
+  namespace: demo-whoami
+status:
+  conditions:
+  - type: Ready
+    status: "True"

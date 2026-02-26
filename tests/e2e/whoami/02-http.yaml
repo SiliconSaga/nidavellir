@@ -1,0 +1,22 @@
+# nidavellir/tests/e2e/whoami/02-http.yaml
+# Confirm the HTTPRoute is routing traffic to the whoami pod.
+# Uses $WHOAMI_DOMAIN env var (default: test.cmdbee.org).
+# Retries for up to 60s in case the HTTPRoute takes a moment to become active.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      set -e
+      DOMAIN="${WHOAMI_DOMAIN:-test.cmdbee.org}"
+      echo "Testing HTTP routing: http://${DOMAIN}/"
+      for i in $(seq 1 12); do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DOMAIN}/")
+        if [ "$STATUS" = "200" ]; then
+          echo "✅ HTTP 200 from http://${DOMAIN}/"
+          exit 0
+        fi
+        echo "  Got HTTP $STATUS (retry $i/12)..."
+        sleep 5
+      done
+      echo "❌ Did not receive HTTP 200 from http://${DOMAIN}/ after 60s"
+      exit 1

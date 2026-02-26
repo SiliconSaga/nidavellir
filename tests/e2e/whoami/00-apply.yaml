@@ -1,0 +1,12 @@
+# nidavellir/tests/e2e/whoami/00-apply.yaml
+# Delete any existing whoami deployment (ensures cert issuance runs from scratch),
+# then apply the demo app. Namespace deletion removes any stale Certificate or
+# CertificateRequest objects, forcing a clean ACME flow.
+#
+# Note: kuttl commands run with CWD = the test case directory (tests/e2e/whoami/),
+# so paths to repo files must be relative from there (../../.. = nidavellir root).
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - command: kubectl delete namespace demo-whoami --ignore-not-found
+  - command: kubectl apply -f ../../../demos/whoami/whoami.yaml
