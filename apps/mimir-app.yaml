@@ -1,0 +1,37 @@
+# ArgoCD Application for Mimir (data services layer).
+#
+# Deploys all data service operators (Strimzi, redis-operator, Percona PG/PSMDB/PXC),
+# Crossplane XRDs and Compositions, and operator RBAC from the mimir repo's argocd/ directory.
+#
+# Sync-wave 6: after Vegvísir (wave 5) but before application workloads.
+# Requires Crossplane providers and ProviderConfigs to already be installed (Nordri layer 2).
+#
+# The Percona PG operator Application uses Kustomize helmCharts rendering to patch
+# the hardcoded runAsNonRoot: true from the upstream Helm chart (mimir#2).
+# This requires --enable-helm in ArgoCD's kustomize.buildOptions (set in Nordri bootstrap.sh).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mimir
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/mimir.git'
+    targetRevision: HEAD
+    path: argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
