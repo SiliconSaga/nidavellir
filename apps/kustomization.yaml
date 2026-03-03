@@ -9,7 +9,7 @@ kind: Kustomization
 # swap to GitHub per the transition procedure in vegvisir/README.md.
 resources:
   - vegvisir-app.yaml
-  # mimir-app.yaml       # TODO: add when Mimir GitOps wiring is ready
+  - mimir-app.yaml
   # heimdall-app.yaml    # TODO: add when Heimdall is deployed
   # keycloak-app.yaml    # TODO: add when Keycloak is deployed
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
