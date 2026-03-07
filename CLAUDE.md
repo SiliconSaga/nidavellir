@@ -34,6 +34,6 @@ WHOAMI_DOMAIN=test.cmdbee.org kubectl kuttl test --config kuttl-test-e2e.yaml
   and `Accepted`), not just the one you're checking.
 - **cert-manager Gateway API**: enable via `ControllerConfiguration`, not `--feature-gates`.
   See `MEMORY.md` for the exact Helm values block.
-- **Heimdall**: `heimdall-app.yaml` not yet created. See `heimdall/design.md` for the
-  planned ArgoCD Application (sync wave 10, path `heimdall/crossplane/`).
+- **Heimdall**: `heimdall-app.yaml` exists in `apps/` but is commented out in
+  `kustomization.yaml`. Sync wave 10, path `heimdall/crossplane/`.
 - **Test domain**: `cmdbee.org` (NameCheap, test-only). All DNS records can be replaced.

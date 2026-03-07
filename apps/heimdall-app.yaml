@@ -1,0 +1,38 @@
+# ArgoCD Application for Heimdall (Nidavellir observability layer).
+#
+# Deploys the Crossplane XRD, Composition, and HeimdallStack Claim from
+# the heimdall repo's crossplane/ directory. This provisions the full
+# LGTM observability stack (Prometheus, Grafana, Loki, Tempo).
+#
+# Sync-wave 10: runs after Vegvisir (wave 5) and Mimir (wave 7). Heimdall
+# has no hard dependency on Mimir but benefits from deploying after core
+# platform services are stable.
+#
+# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
+# is stable, swap repoURL to GitHub and add an ArgoCD repository credential Secret.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: heimdall
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/heimdall.git'
+    targetRevision: HEAD
+    path: crossplane
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: heimdall
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
