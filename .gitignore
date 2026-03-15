@@ -1,0 +1,25 @@
+# Kubeconfig files (may contain credentials)
+kubeconfig
+kubeconfig.yaml
+*.kubeconfig
+
+# Agent draft clearinghouse (issues, PRs)
+.issues/
+.prs/
+
+# GCP auth cache
+gke_gcloud_auth_plugin_cache
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
