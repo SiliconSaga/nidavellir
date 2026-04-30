@@ -1,0 +1,17 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: ClusterIdentityDemo
+metadata:
+  name: ci-demo
+  namespace: demo-cluster-identity
+spec:
+  parameters:
+    # subdomain is required; the composition concatenates it with the domain
+    # from EnvironmentConfig/cluster-identity (or the optional `domain` override
+    # set here) to produce the final hostname.
+    #
+    # On GKE (cluster-identity.domain = cmdbee.org) this resolves to
+    # ci-demo.cmdbee.org. On homelab (cluster-identity.domain = homelab.local)
+    # it resolves to ci-demo.homelab.local — useful as a substrate smoke test
+    # but won't issue a public cert without DNS pointed at the Traefik LB.
+    subdomain: ci-demo
+    issuer: letsencrypt-gateway-staging

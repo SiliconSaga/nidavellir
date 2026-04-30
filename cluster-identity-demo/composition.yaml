@@ -1,0 +1,191 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xclusteridentitydemo-default
+spec:
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XClusterIdentityDemo
+  mode: Pipeline
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (EnvironmentConfig → context).
+  # See components/nordri/docs/cluster-identity.md.
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: whoami app (Deployment + Service)
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-app
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-deployment
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: deployment
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: whoami
+                  namespace: demo-cluster-identity
+                  labels:
+                    claim: {{ $name }}
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: whoami
+                      claim: {{ $name }}
+                  template:
+                    metadata:
+                      labels:
+                        app: whoami
+                        claim: {{ $name }}
+                    spec:
+                      containers:
+                      - name: whoami
+                        image: traefik/whoami
+                        ports:
+                        - name: http
+                          containerPort: 80
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 16Mi
+                          limits:
+                            cpu: 100m
+                            memory: 64Mi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-service
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: service
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: whoami
+                  namespace: demo-cluster-identity
+                  labels:
+                    claim: {{ $name }}
+                spec:
+                  selector:
+                    app: whoami
+                    claim: {{ $name }}
+                  ports:
+                  - port: 80
+                    targetPort: http
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: TLS + ingress (Certificate + HTTPRoute)
+  # Hostname is built from cluster-identity (with optional claim override).
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-routing
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- $domain := .observed.composite.resource.spec.parameters.domain | default $identity.domain -}}
+          {{- $hostname := printf "%s.%s" .observed.composite.resource.spec.parameters.subdomain $domain -}}
+          {{- $issuer := .observed.composite.resource.spec.parameters.issuer | default "letsencrypt-gateway-staging" -}}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-cert
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: cert
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: cert-manager.io/v1
+                kind: Certificate
+                metadata:
+                  name: {{ $name }}-tls
+                  namespace: demo-cluster-identity
+                  labels:
+                    claim: {{ $name }}
+                spec:
+                  secretName: {{ $name }}-tls
+                  privateKey:
+                    rotationPolicy: Always
+                  issuerRef:
+                    name: {{ $issuer }}
+                    kind: ClusterIssuer
+                  dnsNames:
+                  - {{ $hostname }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: {{ $name }}
+                  namespace: demo-cluster-identity
+                  labels:
+                    claim: {{ $name }}
+                spec:
+                  parentRefs:
+                  - name: traefik-gateway
+                    namespace: kube-system
+                    kind: Gateway
+                    sectionName: web
+                  hostnames:
+                  - {{ $hostname }}
+                  rules:
+                  - matches:
+                    - path:
+                        type: PathPrefix
+                        value: "/"
+                    backendRefs:
+                    - name: whoami
+                      port: 80
+
+  # ──────────────────────────────────────────────────────────
+  # Step 3: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready

@@ -1,0 +1,60 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xclusteridentitydemos.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XClusterIdentityDemo
+    plural: xclusteridentitydemos
+  claimNames:
+    kind: ClusterIdentityDemo
+    plural: clusteridentitydemos
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                properties:
+                  subdomain:
+                    type: string
+                    description: "Subdomain prefix; final hostname is <subdomain>.<domain>."
+                  domain:
+                    type: string
+                    description: "Optional override for the base domain. Defaults to EnvironmentConfig/cluster-identity.domain."
+                  issuer:
+                    type: string
+                    enum: ["letsencrypt-gateway-staging", "letsencrypt-gateway", "selfsigned"]
+                    default: "letsencrypt-gateway-staging"
+                    description: "ClusterIssuer used to issue the TLS certificate."
+                required:
+                - subdomain
+            required:
+            - parameters
+          status:
+            type: object
+            properties:
+              hostname:
+                type: string
+                description: "Computed hostname (<subdomain>.<domain>)."
+    additionalPrinterColumns:
+    - name: SUBDOMAIN
+      type: string
+      jsonPath: .spec.parameters.subdomain
+    - name: ISSUER
+      type: string
+      jsonPath: .spec.parameters.issuer
+    - name: READY
+      type: string
+      jsonPath: .status.conditions[?(@.type=='Ready')].status
+    - name: SYNCED
+      type: string
+      jsonPath: .status.conditions[?(@.type=='Synced')].status
