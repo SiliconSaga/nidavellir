@@ -38,21 +38,42 @@ After ArgoCD syncs:
 # Claim should reach Ready=True / Synced=True
 kubectl get clusteridentitydemo -n demo-cluster-identity
 
-# Computed hostname is on the rendered HTTPRoute
+# Computed hostname is on the rendered HTTPRoute (and matches cluster-identity)
 kubectl get httproute -n demo-cluster-identity ci-demo \
   -o jsonpath='{.spec.hostnames[0]}'
 
 # cert-manager issues via HTTP-01 through the Traefik Gateway
+# (uses the temporary challenge HTTPRoute auto-created by cert-manager)
 kubectl get certificate -n demo-cluster-identity ci-demo-tls
 
-# End-to-end (after the cert reaches Ready=True)
-curl -sS https://ci-demo.cmdbee.org   # GKE
+# HTTP routing reaches the whoami pod
+curl -sS http://ci-demo.cmdbee.org   # GKE
 ```
 
+### What this validates
+
+- **cluster-identity defaulting**: the rendered HTTPRoute's hostname comes
+  from `EnvironmentConfig/cluster-identity` via the composition pipeline.
+- **ACME pipeline**: cert-manager issues a Certificate for the templated
+  hostname via HTTP-01 through the Traefik Gateway. `Ready=True` on the
+  Certificate is the success signal here.
+- **HTTPRoute attachment**: the route binds to both the `web` (HTTP) and
+  `websecure` (HTTPS) listeners on `traefik-gateway`.
+
+### What this does **not** validate (and why)
+
+Full HTTPS termination using the demo-issued cert is **out of scope**. The
+Traefik Gateway's `websecure` listener references only the cluster-wide
+`traefik-gateway-default-cert` (self-signed bootstrap) — per-host certs
+issued by cert-manager are not automatically added to the listener's
+`certificateRefs`. So `https://ci-demo.cmdbee.org` reaches Traefik but is
+served by the default cert (browser warning + SAN mismatch). Wiring per-host
+cert into the Gateway listener is a Vegvísir-level change tracked separately.
+
 The `letsencrypt-gateway-staging` issuer produces certs that aren't trusted
-by browsers by default — use it to validate the ACME pipeline without burning
-production rate limits. Switch the claim's `issuer` to `letsencrypt-gateway`
-once you've confirmed staging works.
+by browsers by default — use it to validate the ACME pipeline without
+burning production rate limits. Switch the claim's `issuer` to
+`letsencrypt-gateway` once you've confirmed staging works.
 
 ## Why a Composition for a demo?
 

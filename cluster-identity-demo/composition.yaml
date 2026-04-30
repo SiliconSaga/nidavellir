@@ -172,6 +172,10 @@ spec:
                     namespace: kube-system
                     kind: Gateway
                     sectionName: web
+                  - name: traefik-gateway
+                    namespace: kube-system
+                    kind: Gateway
+                    sectionName: websecure
                   hostnames:
                   - {{ $hostname }}
                   rules:
