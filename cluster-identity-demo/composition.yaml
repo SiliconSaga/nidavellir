@@ -51,7 +51,7 @@ spec:
                 apiVersion: apps/v1
                 kind: Deployment
                 metadata:
-                  name: whoami
+                  name: {{ $name }}
                   namespace: demo-cluster-identity
                   labels:
                     claim: {{ $name }}
@@ -93,7 +93,7 @@ spec:
                 apiVersion: v1
                 kind: Service
                 metadata:
-                  name: whoami
+                  name: {{ $name }}
                   namespace: demo-cluster-identity
                   labels:
                     claim: {{ $name }}
@@ -180,7 +180,7 @@ spec:
                         type: PathPrefix
                         value: "/"
                     backendRefs:
-                    - name: whoami
+                    - name: {{ $name }}
                       port: 80
 
   # ──────────────────────────────────────────────────────────
