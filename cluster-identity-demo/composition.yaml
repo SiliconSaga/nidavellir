@@ -38,6 +38,10 @@ spec:
       inline:
         template: |
           {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- /* Prefer the claim's name so in-cluster resources are predictable for
+                 operators (the XR's metadata.name carries Crossplane's random
+                 suffix). Falls back to $name when the XR was created directly. */ -}}
+          {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object
@@ -51,25 +55,25 @@ spec:
                 apiVersion: apps/v1
                 kind: Deployment
                 metadata:
-                  name: {{ $name }}
+                  name: {{ $claimName }}
                   namespace: demo-cluster-identity
                   labels:
-                    claim: {{ $name }}
+                    claim: {{ $claimName }}
                 spec:
                   replicas: 1
                   selector:
                     matchLabels:
                       app: whoami
-                      claim: {{ $name }}
+                      claim: {{ $claimName }}
                   template:
                     metadata:
                       labels:
                         app: whoami
-                        claim: {{ $name }}
+                        claim: {{ $claimName }}
                     spec:
                       containers:
                       - name: whoami
-                        image: traefik/whoami
+                        image: traefik/whoami:v1.10.3
                         ports:
                         - name: http
                           containerPort: 80
@@ -93,14 +97,14 @@ spec:
                 apiVersion: v1
                 kind: Service
                 metadata:
-                  name: {{ $name }}
+                  name: {{ $claimName }}
                   namespace: demo-cluster-identity
                   labels:
-                    claim: {{ $name }}
+                    claim: {{ $claimName }}
                 spec:
                   selector:
                     app: whoami
-                    claim: {{ $name }}
+                    claim: {{ $claimName }}
                   ports:
                   - port: 80
                     targetPort: http
@@ -120,6 +124,7 @@ spec:
         template: |
           {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
           {{- $domain := .observed.composite.resource.spec.parameters.domain | default $identity.domain -}}
           {{- $hostname := printf "%s.%s" .observed.composite.resource.spec.parameters.subdomain $domain -}}
           {{- $issuer := .observed.composite.resource.spec.parameters.issuer | default "letsencrypt-gateway-staging" -}}
@@ -136,12 +141,12 @@ spec:
                 apiVersion: cert-manager.io/v1
                 kind: Certificate
                 metadata:
-                  name: {{ $name }}-tls
+                  name: {{ $claimName }}-tls
                   namespace: demo-cluster-identity
                   labels:
-                    claim: {{ $name }}
+                    claim: {{ $claimName }}
                 spec:
-                  secretName: {{ $name }}-tls
+                  secretName: {{ $claimName }}-tls
                   privateKey:
                     rotationPolicy: Always
                   issuerRef:
@@ -162,10 +167,10 @@ spec:
                 apiVersion: gateway.networking.k8s.io/v1
                 kind: HTTPRoute
                 metadata:
-                  name: {{ $name }}
+                  name: {{ $claimName }}
                   namespace: demo-cluster-identity
                   labels:
-                    claim: {{ $name }}
+                    claim: {{ $claimName }}
                 spec:
                   parentRefs:
                   - name: traefik-gateway
@@ -184,7 +189,7 @@ spec:
                         type: PathPrefix
                         value: "/"
                     backendRefs:
-                    - name: {{ $name }}
+                    - name: {{ $claimName }}
                       port: 80
 
   # ──────────────────────────────────────────────────────────
