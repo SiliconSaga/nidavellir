@@ -1,6 +1,6 @@
 # ArgoCD Application for the cluster-identity demo (substrate smoke test).
 #
-# Deploys an XRD + Composition + sample Claim that exercise the
+# Deploys an XRD + Composition + sample Claim that exercises the
 # cluster-identity pattern end-to-end via function-environment-configs.
 # See cluster-identity-demo/README.md for what it validates and how to test.
 #

@@ -11,7 +11,8 @@ spec:
 
   # ──────────────────────────────────────────────────────────
   # Step 0: Load cluster identity (EnvironmentConfig → context).
-  # See components/nordri/docs/cluster-identity.md.
+  # See https://github.com/SiliconSaga/nordri/blob/main/docs/cluster-identity.md
+  # (Nordri is a separate repo, not a subdirectory of this one).
   # ──────────────────────────────────────────────────────────
   - step: load-cluster-identity
     functionRef:

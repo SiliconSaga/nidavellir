@@ -10,6 +10,8 @@ spec:
   claimNames:
     kind: ClusterIdentityDemo
     plural: clusteridentitydemos
+  defaultCompositionRef:
+    name: xclusteridentitydemo-default
   versions:
   - name: v1alpha1
     served: true

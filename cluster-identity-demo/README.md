@@ -70,10 +70,21 @@ issued by cert-manager are not automatically added to the listener's
 served by the default cert (browser warning + SAN mismatch). Wiring per-host
 cert into the Gateway listener is a Vegvísir-level change tracked separately.
 
-The `letsencrypt-gateway-staging` issuer produces certs that aren't trusted
-by browsers by default — use it to validate the ACME pipeline without
-burning production rate limits. Switch the claim's `issuer` to
-`letsencrypt-gateway` once you've confirmed staging works.
+### Picking an issuer
+
+The sample claim defaults to `issuer: selfsigned` because it's the only
+choice that succeeds on **both** environments without external dependencies:
+
+- **homelab** — `homelab.local` is not publicly resolvable, so ACME
+  validation can never complete. ACME-backed issuers hang on
+  `Issuing=True`, the Crossplane claim never reaches `Ready=True`, and the
+  ArgoCD application stays non-Healthy. Keep `selfsigned` here.
+- **GKE** — switch to `letsencrypt-gateway-staging` to validate the real
+  ACME pipeline against `cmdbee.org` without burning production rate
+  limits. Once staging works, switch to `letsencrypt-gateway` for a
+  browser-trusted cert.
+
+Edit `claim.yaml` and re-sync ArgoCD to switch issuers.
 
 ## Why a Composition for a demo?
 
