@@ -48,9 +48,9 @@ spec:
                 type: string
                 description: "Computed hostname (<subdomain>.<domain>)."
     additionalPrinterColumns:
-    - name: SUBDOMAIN
+    - name: HOSTNAME
       type: string
-      jsonPath: .spec.parameters.subdomain
+      jsonPath: .status.hostname
     - name: ISSUER
       type: string
       jsonPath: .spec.parameters.issuer

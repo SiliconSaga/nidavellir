@@ -192,6 +192,16 @@ spec:
                     backendRefs:
                     - name: {{ $claimName }}
                       port: 80
+          ---
+          # Patch the XR's status with the computed hostname so operators can
+          # see the resolved cluster-identity-derived value via
+          # `kubectl get clusteridentitydemo`. function-go-templating treats
+          # an emitted resource with the XR's apiVersion+kind as a status
+          # merge, not a separate composed resource.
+          apiVersion: nidavellir.siliconsaga.org/v1alpha1
+          kind: XClusterIdentityDemo
+          status:
+            hostname: {{ $hostname }}
 
   # ──────────────────────────────────────────────────────────
   # Step 3: Auto-ready
