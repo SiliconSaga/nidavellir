@@ -11,6 +11,7 @@ resources:
   - vegvisir-app.yaml
   - mimir-app.yaml
   - heimdall-app.yaml
+  - cluster-identity-demo-app.yaml
   # keycloak-app.yaml    # TODO: add when Keycloak is deployed
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # openbao-app.yaml     # TODO: add when OpenBAO is deployed

@@ -1,0 +1,27 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: ClusterIdentityDemo
+metadata:
+  name: ci-demo
+  namespace: demo-cluster-identity
+spec:
+  parameters:
+    # subdomain is required; the composition concatenates it with the domain
+    # from EnvironmentConfig/cluster-identity (or the optional `domain` override
+    # set here) to produce the final hostname.
+    #
+    # On GKE (cluster-identity.domain = cmdbee.org) this resolves to
+    # ci-demo.cmdbee.org. On homelab (cluster-identity.domain = homelab.local)
+    # it resolves to ci-demo.homelab.local.
+    #
+    # `issuer: selfsigned` is the safe default — works on both environments
+    # because no public DNS / ACME challenge is needed. The Certificate reaches
+    # Ready=True immediately so the Crossplane claim and the ArgoCD app stay
+    # Healthy in both clusters.
+    #
+    # On GKE, switch to `letsencrypt-gateway-staging` (or `letsencrypt-gateway`
+    # for trusted certs) to validate the real ACME pipeline against
+    # `cmdbee.org`. On homelab the ACME-backed issuers will hang on validation
+    # because `homelab.local` is not publicly resolvable — keep this on
+    # `selfsigned` there.
+    subdomain: ci-demo
+    issuer: selfsigned
