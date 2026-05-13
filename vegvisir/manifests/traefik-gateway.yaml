@@ -39,10 +39,29 @@ spec:
         from: All
     tls:
       mode: Terminate
+      # Traefik's Gateway API provider does SNI matching across the
+      # certificateRefs list: the cert whose CN/SAN matches the SNI request
+      # is served; the self-signed bootstrap cert is the fallback for
+      # unmatched hostnames. The matching cert must come BEFORE the
+      # fallback in this list.
+      #
+      # Per-app secrets must live in their app namespace and grant
+      # cross-namespace read via a `ReferenceGrant` (see e.g.
+      # components/ting/k8s/overlays/cmdbee/referencegrant.yaml).
+      #
+      # TODO: this static list doesn't scale. The "Vegvísir Operator —
+      # TBD" mentioned in vegvisir/README.md is the planned mechanism to
+      # watch Certificate resources and patch this list automatically.
+      # Until that lands, each new HTTPS host needs an entry added here
+      # plus a matching ReferenceGrant in its namespace.
       certificateRefs:
       - group: ""
         kind: Secret
+        name: ting-tls
+        namespace: ting
+      - group: ""
+        kind: Secret
         # Created at wave 12 by traefik-default-cert.yaml (self-signed bootstrap cert).
-        # Replaced per-hostname by LetsEncrypt certs via SNI as applications are deployed.
+        # Fallback cert; the list is ordered, so this must stay last.
         name: traefik-gateway-default-cert
         namespace: kube-system
