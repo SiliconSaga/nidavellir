@@ -61,6 +61,10 @@ spec:
         namespace: ting
       - group: ""
         kind: Secret
+        name: gitea-tls
+        namespace: gitea
+      - group: ""
+        kind: Secret
         # Created at wave 12 by traefik-default-cert.yaml (self-signed bootstrap cert).
         # Fallback cert; the list is ordered, so this must stay last.
         name: traefik-gateway-default-cert
