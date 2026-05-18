@@ -18,12 +18,22 @@ per host. **This does not work.** Traefik's Gateway API provider does not
 reliably SNI-iterate across multiple `certificateRefs` on a single listener — it
 uses the first and serves the self-signed default cert for every other host
 ([Traefik #11972](https://github.com/traefik/traefik/issues/11972), open and
-unfixed; reproduced here on both Traefik 3.6.5 and 3.7.1). The Gateway API spec
-only *mandates* single-`certificateRef` support per listener; multiple is
-"implementation-specific," and Traefik's implementation is the broken one.
+unfixed). The Gateway API spec only *mandates* single-`certificateRef` support
+per listener; multiple is "implementation-specific," and Traefik's
+implementation is the broken one.
 
 A wildcard cert sidesteps this entirely: with exactly **one** cert on the
-listener, Traefik never reaches its broken cert-selection path. See
+listener, Traefik never reaches its broken cert-selection path.
+
+## Traefik version constraint — stay on 3.6.x
+
+There is a second, separate Traefik defect: **3.7.x regressed the Gateway
+provider's certificate loading altogether.** On 3.7.1 even a single, valid,
+same-namespace `certificateRef` is never loaded into the TLS store — every
+host serves the self-signed default. On **3.6.5 the wildcard cert serves
+correctly** across all hosts. The Traefik chart in `nordri` is therefore
+pinned to the 3.6.x line (chart 38.x) with an inline warning; do not bump to
+chart 40.x / Traefik 3.7.x without re-testing TLS end to end. See
 [yggdrasil#65](https://github.com/SiliconSaga/yggdrasil/issues/65) for the full
 investigation and the broader TLS/DNS/access-tier direction.
 
