@@ -32,11 +32,6 @@ spec:
                   domain:
                     type: string
                     description: "Optional override for the base domain. Defaults to EnvironmentConfig/cluster-identity.domain."
-                  issuer:
-                    type: string
-                    enum: ["letsencrypt-gateway-staging", "letsencrypt-gateway", "selfsigned"]
-                    default: "letsencrypt-gateway-staging"
-                    description: "ClusterIssuer used to issue the TLS certificate."
                 required:
                 - subdomain
             required:
@@ -51,9 +46,6 @@ spec:
     - name: HOSTNAME
       type: string
       jsonPath: .status.hostname
-    - name: ISSUER
-      type: string
-      jsonPath: .spec.parameters.issuer
     - name: READY
       type: string
       jsonPath: .status.conditions[?(@.type=='Ready')].status

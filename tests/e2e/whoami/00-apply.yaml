@@ -1,7 +1,7 @@
 # nidavellir/tests/e2e/whoami/00-apply.yaml
-# Delete any existing whoami deployment (ensures cert issuance runs from scratch),
-# then apply the demo app. Namespace deletion removes any stale Certificate or
-# CertificateRequest objects, forcing a clean ACME flow.
+# Delete any existing whoami deployment for a clean run, then apply the demo app.
+# The demo has no per-host Certificate — TLS for *.cmdbee.org is the platform
+# wildcard cert — so this test just exercises Gateway attachment + HTTP routing.
 #
 # Note: kuttl commands run with CWD = the test case directory (tests/e2e/whoami/),
 # so paths to repo files must be relative from there (../../.. = nidavellir root).

@@ -72,13 +72,23 @@ See `manifests/traefik-gateway.yaml`.
 
 ## ClusterIssuers
 
-### letsencrypt-gateway (cmdbee.org → Traefik Gateway API)
+### letsencrypt-dns01 (cmdbee.org wildcard — primary)
 
-Uses cert-manager's `gatewayHTTPRoute` HTTP-01 solver. When a `Certificate` is
-requested referencing this issuer, cert-manager creates a temporary `HTTPRoute`
-that routes the ACME challenge through the Traefik Gateway's HTTP (port 80) listener.
+The primary issuer. Uses cert-manager's DNS-01 solver via Google Cloud DNS
+(authenticated by Workload Identity — no stored key). DNS-01 is what makes a
+**wildcard** `*.cmdbee.org` certificate possible; HTTP-01 cannot satisfy a
+wildcard. The platform issues a single wildcard cert (`wildcard-cert.yaml`)
+that the Gateway serves for every `*.cmdbee.org` host.
 
-Use this issuer for any domain whose DNS points at the Traefik LoadBalancer IP.
+See `manifests/letsencrypt-dns01.yaml` and `docs/wildcard-tls.md`.
+
+### letsencrypt-gateway (HTTP-01 — legacy / non-wildcard)
+
+cert-manager's `gatewayHTTPRoute` HTTP-01 solver. Retained for any host that
+needs an *individual* cert outside the `cmdbee.org` wildcard (e.g. a separate
+domain). Note: do not stack multiple HTTP-01 per-host certs as `certificateRefs`
+on the shared Gateway — Traefik does not reliably serve more than one
+(see `docs/wildcard-tls.md`).
 
 See `manifests/letsencrypt-gateway-issuer.yaml`.
 
@@ -122,9 +132,11 @@ spec:
 
 ### Option 2: Gateway API (cmdbee.org — Traefik, current target)
 
-For new services using the Gateway API pattern. HTTPRoutes attach to `traefik-gateway`
-in `kube-system`. TLS is requested via a `Certificate` resource referencing
-`letsencrypt-gateway`.
+For new services using the Gateway API pattern. **TLS is automatic** — the
+platform serves a wildcard `*.cmdbee.org` cert from the shared Gateway, so a
+new app needs **no `Certificate` resource and no `ReferenceGrant` of its own**.
+Just create an `HTTPRoute` for `<app>.cmdbee.org` and attach it to the
+`websecure` listener:
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
@@ -136,6 +148,8 @@ spec:
   parentRefs:
   - name: traefik-gateway
     namespace: kube-system
+    kind: Gateway
+    sectionName: websecure   # HTTPS — served by the platform wildcard cert
   hostnames:
   - "my-app.cmdbee.org"
   rules:
@@ -148,20 +162,12 @@ spec:
       port: 80
 ```
 
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: my-app-tls
-  namespace: my-app
-spec:
-  secretName: my-app-tls-secret
-  issuerRef:
-    name: letsencrypt-gateway
-    kind: ClusterIssuer
-  dnsNames:
-  - my-app.cmdbee.org
-```
+That's the whole story for any `*.cmdbee.org` host. **Do not** add a per-host
+`Certificate` + Gateway `certificateRefs` entry — Traefik does not reliably
+serve more than one cert on a listener (Traefik #11972), and the wildcard
+already covers you. A per-host cert is only needed for a hostname *outside*
+`cmdbee.org`, which is its own design question — see `docs/wildcard-tls.md`
+and [SiliconSaga/yggdrasil#65](https://github.com/SiliconSaga/yggdrasil/issues/65).
 
 ## Transitioning to GitHub
 

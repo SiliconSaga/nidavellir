@@ -111,8 +111,10 @@ spec:
                     targetPort: http
 
   # ──────────────────────────────────────────────────────────
-  # Step 2: TLS + ingress (Certificate + HTTPRoute)
+  # Step 2: ingress (HTTPRoute)
   # Hostname is built from cluster-identity (with optional claim override).
+  # TLS needs no per-host Certificate — the platform serves a wildcard
+  # *.<domain> cert from the shared Gateway. See vegvisir/docs/wildcard-tls.md.
   # ──────────────────────────────────────────────────────────
   - step: deploy-routing
     functionRef:
@@ -128,33 +130,6 @@ spec:
           {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
           {{- $domain := .observed.composite.resource.spec.parameters.domain | default $identity.domain -}}
           {{- $hostname := printf "%s.%s" .observed.composite.resource.spec.parameters.subdomain $domain -}}
-          {{- $issuer := .observed.composite.resource.spec.parameters.issuer | default "letsencrypt-gateway-staging" -}}
-          ---
-          apiVersion: kubernetes.crossplane.io/v1alpha2
-          kind: Object
-          metadata:
-            name: {{ $name }}-cert
-            annotations:
-              gotemplating.fn.crossplane.io/composition-resource-name: cert
-          spec:
-            forProvider:
-              manifest:
-                apiVersion: cert-manager.io/v1
-                kind: Certificate
-                metadata:
-                  name: {{ $claimName }}-tls
-                  namespace: demo-cluster-identity
-                  labels:
-                    claim: {{ $claimName }}
-                spec:
-                  secretName: {{ $claimName }}-tls
-                  privateKey:
-                    rotationPolicy: Always
-                  issuerRef:
-                    name: {{ $issuer }}
-                    kind: ClusterIssuer
-                  dnsNames:
-                  - {{ $hostname }}
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object

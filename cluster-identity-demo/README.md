@@ -3,7 +3,7 @@
 A minimal Crossplane Composition that exercises the
 [cluster-identity pattern](https://github.com/SiliconSaga/nordri/blob/main/docs/cluster-identity.md)
 end-to-end on a live cluster: it deploys a `traefik/whoami` echo service
-behind a `Certificate` + `HTTPRoute`, with the hostname built from
+behind an `HTTPRoute`, with the hostname built from
 `EnvironmentConfig/cluster-identity` (loaded into the pipeline by
 `function-environment-configs`).
 
@@ -12,8 +12,7 @@ that:
 
 - `function-environment-configs` is healthy and the EnvironmentConfig fields
   flow into a downstream `function-go-templating` step
-- The Traefik Gateway and cert-manager pipeline accept a Crossplane-rendered
-  `Certificate` + `HTTPRoute` pair
+- The Traefik Gateway accepts a Crossplane-rendered `HTTPRoute`
 - Per-environment defaulting actually produces the expected hostname for
   this cluster (`ci-demo.cmdbee.org` on GKE, `ci-demo.homelab.local` on
   homelab)
@@ -22,8 +21,8 @@ that:
 
 | Resource | Purpose |
 |----------|---------|
-| `xrd.yaml` | `XClusterIdentityDemo` API. Required: `subdomain`. Optional: `domain` (override), `issuer` (defaults to `letsencrypt-gateway-staging`). |
-| `composition.yaml` | Pipeline: `load-cluster-identity` → render `Deployment` + `Service` → render `Certificate` + `HTTPRoute` → `auto-ready`. |
+| `xrd.yaml` | `XClusterIdentityDemo` API. Required: `subdomain`. Optional: `domain` (override). |
+| `composition.yaml` | Pipeline: `load-cluster-identity` → render `Deployment` + `Service` → render `HTTPRoute` → `auto-ready`. |
 | `claim.yaml` | Sample `ClusterIdentityDemo` claim with `subdomain: ci-demo`. |
 
 Deployed via the `cluster-identity-demo` ArgoCD Application (see
@@ -42,49 +41,27 @@ kubectl get clusteridentitydemo -n demo-cluster-identity
 kubectl get httproute -n demo-cluster-identity ci-demo \
   -o jsonpath='{.spec.hostnames[0]}'
 
-# cert-manager issues via HTTP-01 through the Traefik Gateway
-# (uses the temporary challenge HTTPRoute auto-created by cert-manager)
-kubectl get certificate -n demo-cluster-identity ci-demo-tls
-
-# HTTP routing reaches the whoami pod
-curl -sS http://ci-demo.cmdbee.org   # GKE
+# HTTPS reaches the whoami pod, served by the platform wildcard cert
+curl -sS https://ci-demo.cmdbee.org   # GKE
 ```
 
 ### What this validates
 
 - **cluster-identity defaulting**: the rendered HTTPRoute's hostname comes
   from `EnvironmentConfig/cluster-identity` via the composition pipeline.
-- **ACME pipeline**: cert-manager issues a Certificate for the templated
-  hostname via HTTP-01 through the Traefik Gateway. `Ready=True` on the
-  Certificate is the success signal here.
 - **HTTPRoute attachment**: the route binds to both the `web` (HTTP) and
   `websecure` (HTTPS) listeners on `traefik-gateway`.
+- **TLS**: on GKE, `https://ci-demo.cmdbee.org` is served browser-trusted by
+  the platform wildcard cert (`*.cmdbee.org`) — no per-host `Certificate`.
 
-### What this does **not** validate (and why)
+### TLS notes
 
-Full HTTPS termination using the demo-issued cert is **out of scope**. The
-Traefik Gateway's `websecure` listener references only the cluster-wide
-`traefik-gateway-default-cert` (self-signed bootstrap) — per-host certs
-issued by cert-manager are not automatically added to the listener's
-`certificateRefs`. So `https://ci-demo.cmdbee.org` reaches Traefik but is
-served by the default cert (browser warning + SAN mismatch). Wiring per-host
-cert into the Gateway listener is a Vegvísir-level change tracked separately.
-
-### Picking an issuer
-
-The sample claim defaults to `issuer: selfsigned` because it's the only
-choice that succeeds on **both** environments without external dependencies:
-
-- **homelab** — `homelab.local` is not publicly resolvable, so ACME
-  validation can never complete. ACME-backed issuers hang on
-  `Issuing=True`, the Crossplane claim never reaches `Ready=True`, and the
-  ArgoCD application stays non-Healthy. Keep `selfsigned` here.
-- **GKE** — switch to `letsencrypt-gateway-staging` to validate the real
-  ACME pipeline against `cmdbee.org` without burning production rate
-  limits. Once staging works, switch to `letsencrypt-gateway` for a
-  browser-trusted cert.
-
-Edit `claim.yaml` and re-sync ArgoCD to switch issuers.
+This demo renders no `Certificate` of its own. TLS for `*.cmdbee.org` is the
+platform wildcard served from the shared Gateway (see
+`vegvisir/docs/wildcard-tls.md`), so any `<host>.cmdbee.org` HTTPRoute gets
+HTTPS for free. On homelab there is no wildcard cert — the Gateway serves its
+self-signed default, which is fine for a smoke test whose point is the
+cluster-identity-derived hostname, not TLS.
 
 ## Why a Composition for a demo?
 

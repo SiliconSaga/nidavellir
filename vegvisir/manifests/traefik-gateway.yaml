@@ -11,10 +11,13 @@
 #   - Gateway API CRDs installed
 #   - Traefik deployed by Nordri (GatewayClass traefik must exist)
 #
-# Sync-wave 13: after the traefik-gateway-default-cert secret is created (wave 12),
-# so the websecure listener's certificateRef resolves immediately and the Gateway
-# becomes Programmed on first apply. The LB IP is unaffected — it comes from the
-# Traefik Helm service created at bootstrap, not from this Gateway resource.
+# Sync-wave 13: create the Gateway early. Its websecure listener references the
+# `wildcard-cmdbee-tls` Secret, which cert-manager populates later (see
+# wildcard-cert.yaml, wave 16, after a DNS-01 challenge). On first bootstrap the
+# listener may briefly lack the wildcard cert and serve Traefik's self-signed
+# default until issuance completes — expected, self-heals. The LB IP is
+# unaffected — it comes from the Traefik Helm service created at bootstrap, not
+# from this Gateway resource.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
