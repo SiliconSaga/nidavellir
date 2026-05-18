@@ -39,33 +39,23 @@ spec:
         from: All
     tls:
       mode: Terminate
-      # Traefik's Gateway API provider does SNI matching across the
-      # certificateRefs list: the cert whose CN/SAN matches the SNI request
-      # is served; the self-signed bootstrap cert is the fallback for
-      # unmatched hostnames. The matching cert must come BEFORE the
-      # fallback in this list.
+      # SINGLE certificateRef — a wildcard cert for the cluster domain.
       #
-      # Per-app secrets must live in their app namespace and grant
-      # cross-namespace read via a `ReferenceGrant` (see e.g.
-      # components/ting/k8s/overlays/cmdbee/referencegrant.yaml).
+      # Why exactly one: Traefik's Gateway API provider does NOT reliably
+      # SNI-iterate across multiple certificateRefs on one listener — it
+      # uses the first and serves the default cert for everything else
+      # (Traefik issue #11972, open/unfixed; reproduced here on 3.6.5 and
+      # 3.7.1). The previous per-host pattern (one Secret + ReferenceGrant
+      # per app) silently broke every host past the first. See
+      # SiliconSaga/yggdrasil#65 for the full investigation.
       #
-      # TODO: this static list doesn't scale. The "Vegvísir Operator —
-      # TBD" mentioned in vegvisir/README.md is the planned mechanism to
-      # watch Certificate resources and patch this list automatically.
-      # Until that lands, each new HTTPS host needs an entry added here
-      # plus a matching ReferenceGrant in its namespace.
+      # A wildcard *.<domain> cert is ONE cert covering every host, so the
+      # broken selection path is never reached. The Secret lives in this
+      # Gateway's own namespace (kube-system) — no ReferenceGrant needed.
+      # Issued by the letsencrypt-dns01 ClusterIssuer via cert-manager's
+      # Cloud DNS solver; see wildcard-cert.yaml.
       certificateRefs:
       - group: ""
         kind: Secret
-        name: ting-tls
-        namespace: ting
-      - group: ""
-        kind: Secret
-        name: gitea-tls
-        namespace: gitea
-      - group: ""
-        kind: Secret
-        # Created at wave 12 by traefik-default-cert.yaml (self-signed bootstrap cert).
-        # Fallback cert; the list is ordered, so this must stay last.
-        name: traefik-gateway-default-cert
+        name: wildcard-cmdbee-tls
         namespace: kube-system

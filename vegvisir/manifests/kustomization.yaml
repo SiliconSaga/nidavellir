@@ -9,7 +9,9 @@ kind: Kustomization
 #   wave 12: traefik-default-cert.yaml         — self-signed cert creates the gateway secret
 #   wave 13: traefik-gateway.yaml              — Gateway (secret now exists, listeners valid)
 #   wave 15: letsencrypt-staging-issuer.yaml   — staging ClusterIssuer (test first)
-#   wave 15: letsencrypt-gateway-issuer.yaml   — production ClusterIssuer
+#   wave 15: letsencrypt-gateway-issuer.yaml   — production ClusterIssuer (HTTP-01)
+#   wave 15: letsencrypt-dns01.yaml            — production ClusterIssuer (DNS-01, for wildcard)
+#   wave 16: wildcard-cert.yaml                — wildcard *.cmdbee.org cert the Gateway serves
 #
 resources:
   - cert-manager-app.yaml
@@ -18,3 +20,5 @@ resources:
   - traefik-gateway.yaml
   - letsencrypt-staging-issuer.yaml
   - letsencrypt-gateway-issuer.yaml
+  - letsencrypt-dns01.yaml
+  - wildcard-cert.yaml

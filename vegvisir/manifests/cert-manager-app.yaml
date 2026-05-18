@@ -22,6 +22,13 @@ spec:
     helm:
       values: |
         installCRDs: true
+        # Workload Identity: annotate the controller's ServiceAccount so it
+        # impersonates the GCP SA holding roles/dns.admin. This is what lets
+        # the letsencrypt-dns01 ClusterIssuer's Cloud DNS solver authenticate
+        # without a service-account key. See letsencrypt-dns01.yaml.
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com
         config:
           apiVersion: controller.config.cert-manager.io/v1alpha1
           kind: ControllerConfiguration
