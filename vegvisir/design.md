@@ -30,15 +30,21 @@ K3s includes Traefik by default, but it may need reconfiguration to fully suppor
 
 We adopt a "split-brain" issuer strategy to allow robust experimentation without breaking legacy Ingress-based services.
 
-### GKE: HTTP-01 with Gateway
-*   **Issuer Name**: `letsencrypt-gateway`
-*   **Solver**: `http01` using `gatewayHTTPRoute`.
-*   **Configuration**:
-    *   The solver is defined in the `ClusterIssuer`, not on the Gateway itself.
-    *   When a `Certificate` references this issuer, cert-manager creates a temporary
-        `HTTPRoute` that routes the ACME HTTP-01 challenge through the Traefik Gateway's
-        port-80 listener. No annotations on the Gateway are needed.
-    *   Prerequisite: Gateway API CRDs must be installed on the cluster (see README).
+### GKE: DNS-01 wildcard (current)
+
+*   **Issuer Name**: `letsencrypt-dns01`
+*   **Solver**: `dns01` via Google Cloud DNS, authenticated by Workload Identity
+    (no service-account key stored in-cluster).
+*   **Certificate**: a single **wildcard** `*.cmdbee.org` (+ apex) cert, served
+    by the shared Gateway's `websecure` listener as its only `certificateRef`.
+*   **Why wildcard, not per-host**: Traefik's Gateway provider does not reliably
+    serve more than one `certificateRef` on a listener (Traefik #11972). One
+    wildcard cert = no cert-selection = reliable. Per-host `Certificate` +
+    `ReferenceGrant` is retired.
+*   **Traefik version**: pinned to 3.6.x — 3.7.x regressed Gateway-provider cert
+    loading entirely. See `docs/wildcard-tls.md` and SiliconSaga/yggdrasil#65.
+*   `letsencrypt-gateway` (HTTP-01) is kept only for the rare individual cert
+    outside the wildcard domain.
 
 ### Homelab: Tunnel Strategy (Deferred)
 *   **Current State**: Defer local cert management.
@@ -48,58 +54,32 @@ We adopt a "split-brain" issuer strategy to allow robust experimentation without
     *   Homelab receives decrypted HTTP traffic through the tunnel.
     *   **Benefit**: Removes the need for DNS-01 challenges or exposing local ports (avoiding Namecheap IP whitelisting issues).
 
-## 3. DNS Automation (TODO)
+## 3. DNS
 
-**Goal**: Fully automate the DNS A record creation and cert issuance for any domain
-pointed at the Traefik Gateway, so a user with a NameCheap account and API credentials
-gets zero-touch domain wiring after bootstrap.
+**Resolved (2026-05-18).** `cmdbee.org` DNS is hosted on **Google Cloud DNS**
+(managed zone in the same GCP project as the cluster). DNS-01 cert issuance and
+the wildcard cert are implemented — see §2 and `docs/wildcard-tls.md`.
 
-### Current state
-The bootstrap script prints the Traefik LB IP and tells the user to go set A records
-manually at their registrar. cert-manager then uses HTTP-01, which requires DNS to
-already be propagated before cert issuance can begin.
+Co-locating DNS in the cluster's GCP project is what enables the keyless
+Workload Identity path for the cert-manager Cloud DNS solver. Per-record DNS
+(apex + a `*.cmdbee.org` wildcard `A` → the Traefik LB) is managed in the
+Cloud DNS zone.
 
-### Target architecture (GKE + NameCheap)
+### Historical note (superseded)
 
-**Problem: NameCheap API IP whitelisting**
-NameCheap's API requires callers to be from a pre-whitelisted IP. GKE node IPs are
-ephemeral and change on cluster reset — making whitelisting impractical without a
-stable egress IP.
+An earlier plan targeted NameCheap: a community ExternalDNS webhook for A-record
+automation plus a Cloud NAT static egress IP to satisfy NameCheap's API
+IP-allowlist, with HTTP-01 certs. That whole approach is moot — moving DNS to
+Cloud DNS removed the IP-allowlist problem and gave a first-party cert-manager
+solver. Recorded only so the reasoning isn't re-derived.
 
-**Solution: Cloud NAT with a static egress IP**
-Add a Cloud NAT configuration in `gke-provision.sh` that routes all cluster outbound
-traffic through a reserved static IP. The user whitelists that one IP in NameCheap
-once; it survives cluster resets.
+### Still open — A-record automation for new hosts
 
-```
-gke-provision.sh create  →  also reserves a static IP + creates Cloud NAT
-gke-provision.sh delete  →  also releases the static IP
-```
-
-**ExternalDNS for A record automation**
-Deploy ExternalDNS as a Nidavellir/Vegvísir component. It watches the Traefik
-LoadBalancer Service and automatically creates/updates A records via the NameCheap
-API. Provider: ExternalDNS 0.14+ supports third-party webhook providers; a community
-NameCheap webhook exists (evaluate maintenance status before adopting).
-
-Credentials: NameCheap API key + username stored as a Secret (OpenBAO long-term).
-
-**DNS-01 challenge (optional upgrade)**
-Switch cert-manager from HTTP-01 to DNS-01 using the same NameCheap API credentials.
-Benefits:
-- Cert issuance no longer depends on DNS propagation timing
-- Wildcard certificates become possible (`*.cmdbee.org`)
-- The ClusterIssuer solver changes from `gatewayHTTPRoute` to `webhook` (NameCheap)
-
-DNS-01 is more powerful but adds a second NameCheap API dependency on the cert-manager
-side; evaluate whether ExternalDNS alone (plus HTTP-01) is sufficient first.
-
-### Open questions
-- Maintain the Cloud NAT static IP across cluster resets, or require a one-time setup
-  step outside of gke-provision.sh?
-- Which NameCheap ExternalDNS webhook to adopt? Needs maintenance/activity check.
-- Make NameCheap automation optional (flag in bootstrap or separate step) so the
-  flow still works for users with other registrars or manual DNS preferences.
+A new app today needs a DNS record (or the zone needs a `*.cmdbee.org` wildcard
+`A`, which is currently in place — so subdomains resolve automatically). If
+finer per-host record automation is wanted later, ExternalDNS with the Cloud DNS
+provider (first-party, no webhook) is the clean path. Tracked under
+SiliconSaga/yggdrasil#65.
 
 ## 4. The Vegvísir Operator
 
@@ -130,7 +110,9 @@ Vegvísir acts as the operator that bridges the gap between individual Game Serv
  3.  **Layer 5 (Vegvísir — Platform Services)**:
      *   ArgoCD installs cert-manager (fresh clusters only; skip if pre-existing).
      *   ArgoCD applies the shared `Gateway` manifest → LoadBalancer IP provisioned.
-     *   ArgoCD applies `letsencrypt-gateway` ClusterIssuer.
+     *   ArgoCD applies the `letsencrypt-dns01` ClusterIssuer and the wildcard
+         `*.cmdbee.org` `Certificate` (see §2). The `letsencrypt-gateway`
+         HTTP-01 issuer is also applied — retained for non-wildcard cases.
      *   ArgoCD installs Vegvísir Operator (TBD).
 
 2.  **Application Layer (Crossplane/Agones)**:

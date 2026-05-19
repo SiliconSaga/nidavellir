@@ -37,30 +37,13 @@ spec:
   selector:
     app: whoami
 ---
-# Staging certificate for the test hostname.
-# Uses letsencrypt-gateway-staging — validates the HTTP-01 challenge pipeline
-# without consuming Let's Encrypt production rate limits.
-# Replace the hostname with your actual domain before applying.
-# Wave 16: after all Vegvísir platform resources (issuers at wave 15).
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: whoami-cert
-  namespace: demo-whoami
-  annotations:
-    argocd.argoproj.io/sync-wave: "16"
-spec:
-  secretName: whoami-tls
-  privateKey:
-    rotationPolicy: Always
-  issuerRef:
-    name: letsencrypt-gateway-staging
-    kind: ClusterIssuer
-  dnsNames:
-  - test.cmdbee.org
----
-# HTTP route — validates Gateway attachment and plain HTTP traffic.
+# HTTPRoute — validates Gateway attachment.
 # Wave 16: after Gateway is Programmed (wave 13).
+#
+# No per-host Certificate: the platform serves a wildcard *.cmdbee.org cert
+# from the shared Gateway. To put this demo on HTTPS, add a `websecure`
+# parentRef alongside `web` — TLS is then automatic, no cert resource needed.
+# See docs/wildcard-tls.md.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -73,7 +56,7 @@ spec:
   - name: traefik-gateway
     namespace: kube-system
     kind: Gateway
-    sectionName: web   # attach to HTTP listener only
+    sectionName: web
   hostnames:
   - "test.cmdbee.org"
   rules:

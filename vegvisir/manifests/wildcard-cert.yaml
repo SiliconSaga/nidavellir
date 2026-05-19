@@ -1,0 +1,35 @@
+# Platform wildcard TLS certificate.
+#
+# A single cert covering `*.<domain>` plus the bare apex (a wildcard does
+# NOT cover the apex, so both are listed as SANs). This is THE cert the
+# Traefik Gateway's websecure listener serves — see traefik-gateway.yaml
+# for why exactly one cert is the only Traefik-reliable arrangement
+# (issue #11972; SiliconSaga/yggdrasil#65).
+#
+# Lives in `kube-system` — the same namespace as the Gateway — so the
+# listener references it with no ReferenceGrant. Every `*.cmdbee.org`
+# host (gitea, ting, ci-demo, grafana, future apps) is covered at once;
+# new apps get working HTTPS with zero per-app cert action.
+#
+# Issued by letsencrypt-dns01 (DNS-01 via Cloud DNS). First issuance runs
+# an ACME DNS-01 challenge and takes ~2-5 minutes; cert-manager then
+# auto-renews well before the 90-day expiry.
+#
+# Sync-wave 16: after the letsencrypt-dns01 ClusterIssuer (wave 15).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-cmdbee
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "16"
+spec:
+  secretName: wildcard-cmdbee-tls
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    name: letsencrypt-dns01
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.cmdbee.org"
+    - "cmdbee.org"

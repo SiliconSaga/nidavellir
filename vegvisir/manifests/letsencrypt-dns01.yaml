@@ -1,0 +1,42 @@
+# Production ClusterIssuer using a DNS-01 ACME challenge via Google Cloud DNS.
+#
+# This is the issuer for the platform's wildcard certificate. Wildcard certs
+# (*.<domain>) cannot use HTTP-01 — Let's Encrypt requires DNS-01 for them.
+# cert-manager creates a temporary `_acme-challenge.<domain>` TXT record in
+# the Cloud DNS managed zone, Let's Encrypt validates it, then it's removed.
+#
+# Authentication: Workload Identity, NOT a service-account key. The
+# cert-manager controller's Kubernetes SA (cert-manager/cert-manager) is
+# annotated (see cert-manager-app.yaml) to impersonate the GCP service
+# account `cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com`,
+# which holds `roles/dns.admin`. No `serviceAccountSecretRef` here means
+# cert-manager uses the ambient WI credentials — zero keys to store or rotate.
+#
+# GCP-side setup (one-time, reproducible — see vegvisir/docs or yggdrasil#65):
+#   gcloud iam service-accounts create cert-manager-dns01 --project teralivekubernetes
+#   gcloud projects add-iam-policy-binding teralivekubernetes \
+#     --member serviceAccount:cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com \
+#     --role roles/dns.admin
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com \
+#     --role roles/iam.workloadIdentityUser \
+#     --member 'serviceAccount:teralivekubernetes.svc.id.goog[cert-manager/cert-manager]'
+#
+# Sync-wave 15: after cert-manager is ready (wave 10), alongside the other
+# ClusterIssuers.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns01
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+spec:
+  acme:
+    email: siliconsaga@gmail.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-dns01-account-key
+    solvers:
+    - dns01:
+        cloudDNS:
+          project: teralivekubernetes

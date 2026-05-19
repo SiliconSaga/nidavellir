@@ -20,7 +20,8 @@ kubectl kuttl test --config kuttl-test.yaml
 ### Run e2e tests (requires live DNS for cmdbee.org)
 ```bash
 WHOAMI_DOMAIN=test.cmdbee.org kubectl kuttl test --config kuttl-test-e2e.yaml
-# Tests: whoami cert issuance via ACME + HTTP routing
+# Tests: whoami Gateway attachment + HTTP routing (TLS is the platform wildcard;
+# the demo has no per-host cert)
 ```
 
 ---
