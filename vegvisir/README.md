@@ -33,8 +33,10 @@ in Nordri.
 ### Current State (Existing GKE Cluster)
 
 cert-manager is already installed on the current cluster (managing `siliconsaga.org`
-via nginx). Vegvísir skips reinstalling it and deploys only the new `Gateway` resource
-and `letsencrypt-gateway` ClusterIssuer for the `cmdbee.org` domain.
+via nginx). Vegvísir skips reinstalling it and deploys the new `Gateway` resource,
+the `letsencrypt-dns01` ClusterIssuer, and the wildcard `*.cmdbee.org` `Certificate`
+for the `cmdbee.org` domain (plus the `letsencrypt-gateway` HTTP-01 issuer,
+retained for non-wildcard cases).
 
 The existing nginx-backed `letsencrypt-prod` ClusterIssuer on the cluster continues to
 work for `siliconsaga.org` — Vegvísir does not touch it.

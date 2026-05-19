@@ -43,7 +43,7 @@ spec:
 # No per-host Certificate: the platform serves a wildcard *.cmdbee.org cert
 # from the shared Gateway. To put this demo on HTTPS, add a `websecure`
 # parentRef alongside `web` — TLS is then automatic, no cert resource needed.
-# See vegvisir/docs/wildcard-tls.md.
+# See docs/wildcard-tls.md.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

@@ -31,6 +31,7 @@ K3s includes Traefik by default, but it may need reconfiguration to fully suppor
 We adopt a "split-brain" issuer strategy to allow robust experimentation without breaking legacy Ingress-based services.
 
 ### GKE: DNS-01 wildcard (current)
+
 *   **Issuer Name**: `letsencrypt-dns01`
 *   **Solver**: `dns01` via Google Cloud DNS, authenticated by Workload Identity
     (no service-account key stored in-cluster).
@@ -109,7 +110,9 @@ Vegvísir acts as the operator that bridges the gap between individual Game Serv
  3.  **Layer 5 (Vegvísir — Platform Services)**:
      *   ArgoCD installs cert-manager (fresh clusters only; skip if pre-existing).
      *   ArgoCD applies the shared `Gateway` manifest → LoadBalancer IP provisioned.
-     *   ArgoCD applies `letsencrypt-gateway` ClusterIssuer.
+     *   ArgoCD applies the `letsencrypt-dns01` ClusterIssuer and the wildcard
+         `*.cmdbee.org` `Certificate` (see §2). The `letsencrypt-gateway`
+         HTTP-01 issuer is also applied — retained for non-wildcard cases.
      *   ArgoCD installs Vegvísir Operator (TBD).
 
 2.  **Application Layer (Crossplane/Agones)**:

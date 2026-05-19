@@ -58,7 +58,7 @@ curl -sS https://ci-demo.cmdbee.org   # GKE
 
 This demo renders no `Certificate` of its own. TLS for `*.cmdbee.org` is the
 platform wildcard served from the shared Gateway (see
-`vegvisir/docs/wildcard-tls.md`), so any `<host>.cmdbee.org` HTTPRoute gets
+`docs/wildcard-tls.md`), so any `<host>.cmdbee.org` HTTPRoute gets
 HTTPS for free. On homelab there is no wildcard cert — the Gateway serves its
 self-signed default, which is fine for a smoke test whose point is the
 cluster-identity-derived hostname, not TLS.
