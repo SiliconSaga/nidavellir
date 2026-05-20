@@ -41,6 +41,10 @@ gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --project "$PROJE
 
 This is out-of-GitOps (it's cloud IAM, not cluster state) — the same category as the Gitea admin credentials created by `nordri/bootstrap.sh`. A fresh cluster needs these three commands run once before the wildcard cert can issue.
 
+## Future tightening
+
+The `gcloud projects add-iam-policy-binding` above grants `roles/dns.admin` at the project level — fine for this test cluster but broader than needed. Tighter least-privilege scopes the binding to the `cmdbee-org` managed zone with `gcloud dns managed-zones add-iam-policy-binding cmdbee-org --member "serviceAccount:${SA_EMAIL}" --role roles/dns.admin --project "$PROJECT"` (and removing the project-level binding via `gcloud projects remove-iam-policy-binding`). TODO: tighten before broader adoption.
+
 ## Related
 
 - [TLS and Certificates](tls-and-certificates.md) — what this IAM and DNS setup is in service of.

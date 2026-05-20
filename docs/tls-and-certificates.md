@@ -14,6 +14,8 @@ A wildcard cert sidesteps this entirely: with exactly **one** cert on the listen
 
 A *separate* defect required pinning Traefik to 3.6.x — see [Traefik Version Pins](traefik-version-pins.md).
 
+> **Upstream update:** Traefik [#11972](https://github.com/traefik/traefik/issues/11972) has since been closed in Traefik 3.7, so the original SNI multi-`certificateRef` bug is upstream-resolved. The wildcard design remains in place because the 3.6.x pin is held by a *separate* 3.7.x cert-loading regression — see [Traefik Version Pins](traefik-version-pins.md). Worth re-evaluating the wildcard design's necessity if/when that regression is also fixed.
+
 ## Components
 
 | File | Role |
