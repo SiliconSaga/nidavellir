@@ -82,7 +82,7 @@ The primary issuer. Uses cert-manager's DNS-01 solver via Google Cloud DNS
 wildcard. The platform issues a single wildcard cert (`wildcard-cert.yaml`)
 that the Gateway serves for every `*.cmdbee.org` host.
 
-See `manifests/letsencrypt-dns01.yaml` and `docs/wildcard-tls.md`.
+See `manifests/letsencrypt-dns01.yaml` and `docs/tls-and-certificates.md`.
 
 ### letsencrypt-gateway (HTTP-01 — legacy / non-wildcard)
 
@@ -90,7 +90,7 @@ cert-manager's `gatewayHTTPRoute` HTTP-01 solver. Retained for any host that
 needs an *individual* cert outside the `cmdbee.org` wildcard (e.g. a separate
 domain). Note: do not stack multiple HTTP-01 per-host certs as `certificateRefs`
 on the shared Gateway — Traefik does not reliably serve more than one
-(see `docs/wildcard-tls.md`).
+(see `docs/tls-and-certificates.md`).
 
 See `manifests/letsencrypt-gateway-issuer.yaml`.
 
@@ -168,7 +168,7 @@ That's the whole story for any `*.cmdbee.org` host. **Do not** add a per-host
 `Certificate` + Gateway `certificateRefs` entry — Traefik does not reliably
 serve more than one cert on a listener (Traefik #11972), and the wildcard
 already covers you. A per-host cert is only needed for a hostname *outside*
-`cmdbee.org`, which is its own design question — see `docs/wildcard-tls.md`
+`cmdbee.org`, which is its own design question — see `docs/tls-and-certificates.md`
 and [SiliconSaga/yggdrasil#65](https://github.com/SiliconSaga/yggdrasil/issues/65).
 
 ## Transitioning to GitHub
