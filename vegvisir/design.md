@@ -42,7 +42,7 @@ We adopt a "split-brain" issuer strategy to allow robust experimentation without
     wildcard cert = no cert-selection = reliable. Per-host `Certificate` +
     `ReferenceGrant` is retired.
 *   **Traefik version**: pinned to 3.6.x — 3.7.x regressed Gateway-provider cert
-    loading entirely. See `docs/wildcard-tls.md` and SiliconSaga/yggdrasil#65.
+    loading entirely. See `docs/traefik-version-pins.md` and SiliconSaga/yggdrasil#65.
 *   `letsencrypt-gateway` (HTTP-01) is kept only for the rare individual cert
     outside the wildcard domain.
 
@@ -58,7 +58,7 @@ We adopt a "split-brain" issuer strategy to allow robust experimentation without
 
 **Resolved (2026-05-18).** `cmdbee.org` DNS is hosted on **Google Cloud DNS**
 (managed zone in the same GCP project as the cluster). DNS-01 cert issuance and
-the wildcard cert are implemented — see §2 and `docs/wildcard-tls.md`.
+the wildcard cert are implemented — see §2 and `docs/tls-and-certificates.md`.
 
 Co-locating DNS in the cluster's GCP project is what enables the keyless
 Workload Identity path for the cert-manager Cloud DNS solver. Per-record DNS

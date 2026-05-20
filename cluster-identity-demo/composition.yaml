@@ -114,7 +114,7 @@ spec:
   # Step 2: ingress (HTTPRoute)
   # Hostname is built from cluster-identity (with optional claim override).
   # TLS needs no per-host Certificate — the platform serves a wildcard
-  # *.<domain> cert from the shared Gateway. See docs/wildcard-tls.md.
+  # *.<domain> cert from the shared Gateway. See docs/tls-and-certificates.md.
   # ──────────────────────────────────────────────────────────
   - step: deploy-routing
     functionRef:
