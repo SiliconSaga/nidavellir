@@ -48,7 +48,7 @@ spec:
                  operators (the XR's metadata.name carries Crossplane's random
                  suffix). Falls back to $name when the XR was created directly. */ -}}
           {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
-          {{- $params := .observed.composite.resource.spec.parameters -}}
+          {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
           {{- $replicas := 0 -}}
           {{- if $params.replicasOverride -}}
             {{- $replicas = $params.replicasOverride -}}
@@ -74,9 +74,9 @@ spec:
                   namespace: ntfy
                 data:
                   server.yml: |
-                    {{- if $params.baseUrl }}
+                    {{ if $params.baseUrl -}}
                     base-url: "{{ $params.baseUrl }}"
-                    {{- end }}
+                    {{ end -}}
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
                     cache-file: "/var/lib/ntfy/cache.db"
@@ -190,7 +190,7 @@ spec:
                     claim: {{ $claimName }}
                   ports:
                   - port: 80
-                    targetPort: 80
+                    targetPort: http
 
   # ──────────────────────────────────────────────────────────
   # Step 2: Auto-ready

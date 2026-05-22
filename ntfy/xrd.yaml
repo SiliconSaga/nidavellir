@@ -10,6 +10,8 @@ spec:
   claimNames:
     kind: Ntfy
     plural: ntfys
+  defaultCompositionRef:
+    name: xntfy-default
   versions:
     - name: v1alpha1
       served: true
@@ -34,3 +36,14 @@ spec:
                     baseUrl:
                       type: string
                       description: "ntfy base-url (e.g. http://ntfy.<tailnet>.ts.net). Set per environment."
+                    environment:
+                      type: string
+                      enum: ["homelab", "gke"]
+                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity. Controls replica count and the gke-only Tailscale Service annotations."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status
