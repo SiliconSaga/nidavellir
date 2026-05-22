@@ -1,0 +1,37 @@
+# ArgoCD Application for ntfy (notification delivery, Nidavellir platform layer).
+#
+# Deploys the XNtfy XRD + Composition + Ntfy claim from the nidavellir repo's
+# ntfy/ directory. ntfy is active (replicas 1) on GKE and a cold standby
+# (replicas 0) on homelab, per the cluster-identity-driven composition.
+#
+# Sync-wave 6: after the Tailscale operator (wave 4) so the gke Service can be
+# exposed to the tailnet on first sync.
+#
+# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
+# is stable, swap repoURL to GitHub and add an ArgoCD repository credential Secret.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ntfy
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
+    targetRevision: HEAD
+    path: ntfy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ntfy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
