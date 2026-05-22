@@ -1,0 +1,10 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: Ntfy
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  parameters:
+    tailscaleHostname: ntfy
+    # baseUrl is set during tailnet setup once the MagicDNS name is known, e.g.:
+    # baseUrl: "http://ntfy.<your-tailnet>.ts.net"

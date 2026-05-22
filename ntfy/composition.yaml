@@ -1,0 +1,200 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xntfy-default
+spec:
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XNtfy
+  mode: Pipeline
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (EnvironmentConfig → context).
+  # See https://github.com/SiliconSaga/nordri/blob/main/docs/cluster-identity.md
+  # (Nordri is a separate repo, not a subdirectory of this one).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: ntfy resources (ConfigMap + PVC + Deployment + Service)
+  # $env drives replica count and Tailscale Service annotations.
+  # $storageClass is sourced from the cluster-identity EnvironmentConfig.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-ntfy
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $env := .observed.composite.resource.spec.parameters.environment | default $identity.environment -}}
+          {{- $storageClass := $identity.storageClass -}}
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- /* Prefer the claim's name so in-cluster resources are predictable for
+                 operators (the XR's metadata.name carries Crossplane's random
+                 suffix). Falls back to $name when the XR was created directly. */ -}}
+          {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
+          {{- $params := .observed.composite.resource.spec.parameters -}}
+          {{- $replicas := 0 -}}
+          {{- if $params.replicasOverride -}}
+            {{- $replicas = $params.replicasOverride -}}
+          {{- else if eq $env "gke" -}}
+            {{- $replicas = 1 -}}
+          {{- else -}}
+            {{- $replicas = 0 -}}
+          {{- end -}}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-configmap
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: ntfy-configmap
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: ntfy-server-config
+                  namespace: ntfy
+                data:
+                  server.yml: |
+                    {{- if $params.baseUrl }}
+                    base-url: "{{ $params.baseUrl }}"
+                    {{- end }}
+                    auth-file: "/var/lib/ntfy/user.db"
+                    auth-default-access: "deny-all"
+                    cache-file: "/var/lib/ntfy/cache.db"
+                    behind-proxy: true
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-pvc
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: ntfy-pvc
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: PersistentVolumeClaim
+                metadata:
+                  name: ntfy-data
+                  namespace: ntfy
+                spec:
+                  storageClassName: {{ $storageClass }}
+                  accessModes:
+                  - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 1Gi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-deployment
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: ntfy-deployment
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: ntfy
+                  namespace: ntfy
+                  labels:
+                    app: ntfy
+                    claim: {{ $claimName }}
+                spec:
+                  replicas: {{ $replicas }}
+                  selector:
+                    matchLabels:
+                      app: ntfy
+                      claim: {{ $claimName }}
+                  template:
+                    metadata:
+                      labels:
+                        app: ntfy
+                        claim: {{ $claimName }}
+                    spec:
+                      containers:
+                      - name: ntfy
+                        image: binwiederhier/ntfy:v2.23.0
+                        args:
+                        - serve
+                        ports:
+                        - name: http
+                          containerPort: 80
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 64Mi
+                          limits:
+                            cpu: 250m
+                            memory: 128Mi
+                        volumeMounts:
+                        - name: config
+                          mountPath: /etc/ntfy/server.yml
+                          subPath: server.yml
+                        - name: data
+                          mountPath: /var/lib/ntfy
+                      volumes:
+                      - name: config
+                        configMap:
+                          name: ntfy-server-config
+                      - name: data
+                        persistentVolumeClaim:
+                          claimName: ntfy-data
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-service
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: ntfy-service
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: ntfy
+                  namespace: ntfy
+                  labels:
+                    app: ntfy
+                    claim: {{ $claimName }}
+                  {{- if eq $env "gke" }}
+                  annotations:
+                    tailscale.com/expose: "true"
+                    tailscale.com/hostname: {{ $params.tailscaleHostname | default "ntfy" }}
+                  {{- end }}
+                spec:
+                  selector:
+                    app: ntfy
+                    claim: {{ $claimName }}
+                  ports:
+                  - port: 80
+                    targetPort: 80
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready
