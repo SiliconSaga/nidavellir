@@ -5,6 +5,12 @@ metadata:
   namespace: ntfy
 spec:
   parameters:
-    tailscaleHostname: ntfy
-    # baseUrl is set during tailnet setup once the MagicDNS name is known, e.g.:
-    # baseUrl: "http://ntfy.<your-tailnet>.ts.net"
+    # Tailscale device name defaults to "ntfy-<env>" (e.g. ntfy-gke), distinguished
+    # per environment to avoid MagicDNS collisions during failover. GKE is singular
+    # and stable; homelab exposure is deferred (two resettable boxes — name per-box,
+    # not generic "homelab", when it lands). Override tailscaleHostname for a custom name.
+    #
+    # base-url is the tailnet MagicDNS URL ntfy serves itself at (gke active hub).
+    # http is fine — the tailnet encrypts transport. When homelab exposure lands,
+    # base-url should become env-derived (EnvironmentConfig) rather than hardcoded here.
+    baseUrl: "http://ntfy-gke.tailf5b47a.ts.net"

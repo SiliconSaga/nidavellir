@@ -182,7 +182,7 @@ spec:
                   {{- if eq $env "gke" }}
                   annotations:
                     tailscale.com/expose: "true"
-                    tailscale.com/hostname: {{ $params.tailscaleHostname | default "ntfy" }}
+                    tailscale.com/hostname: {{ $params.tailscaleHostname | default (printf "ntfy-%s" $env) }}
                   {{- end }}
                 spec:
                   selector:
