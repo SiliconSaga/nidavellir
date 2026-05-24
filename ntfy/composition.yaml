@@ -183,6 +183,7 @@ spec:
                   annotations:
                     tailscale.com/expose: "true"
                     tailscale.com/hostname: {{ $params.tailscaleHostname | default (printf "ntfy-%s" $env) }}
+                    tailscale.com/tags: "tag:ntfy"
                   {{- end }}
                 spec:
                   selector:
