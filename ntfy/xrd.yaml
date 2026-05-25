@@ -28,6 +28,7 @@ spec:
                   properties:
                     replicasOverride:
                       type: integer
+                      minimum: 0
                       description: "Optional override for replica count. When unset, the composition sets 1 on gke (active) and 0 on homelab (cold standby)."
                     tailscaleHostname:
                       type: string

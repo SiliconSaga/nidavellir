@@ -397,16 +397,17 @@ Expected: the `ntfy-critical`/`ntfy-warning` receivers and the `severity="critic
                         webhook_configs:
                           - url: "http://ntfy.ntfy.svc.cluster.local/heimdall-alerts"
                             send_resolved: true
-                          - url: "{{ .observed.composite.resource.spec.parameters.knarrWebhookUrl | default \"http://localhost:1/disabled-knarr-seam\" }}"
+                          {{- if .observed.composite.resource.spec.parameters.knarrWebhookUrl }}
+                          - url: "{{ .observed.composite.resource.spec.parameters.knarrWebhookUrl }}"
                             send_resolved: true
-                            max_alerts: 0
+                          {{- end }}
 ```
 
-Add the `knarrWebhookUrl` parameter to `components/heimdall/crossplane/xrd.yaml` (string, no default → the template default applies). The placeholder `localhost:1` + `max_alerts: 0` keeps it inert.
+Add the `knarrWebhookUrl` parameter to `components/heimdall/crossplane/xrd.yaml` (string, no default). The `{{- if }}` gate omits the second webhook entirely when `knarrWebhookUrl` is unset — truly inert, with no placeholder URL and no delivery attempt. (Do **not** use `max_alerts: 0` as an "off" switch: in AlertManager that means *unlimited*, not disabled.)
 
 - [ ] **Step 2: Document the contract** in `architecture.md`: the Knarr receiver consumes the standard AlertManager webhook v4 JSON payload at `knarrWebhookUrl`; Knarr implements a receiver to it for the SMS→call tier. Link the design doc.
 - [ ] **Step 3: Validate parse** (`kubectl apply --dry-run=client` on both files).
-- [ ] **Step 4: Verify dormancy.** Confirm AlertManager does not error on the placeholder URL (it shouldn't attempt delivery with `max_alerts: 0` / unreachable inert URL; if AlertManager validates URL reachability at load, switch the default to omitting the second receiver via a `{{- if }}` guard instead). Expected: AlertManager healthy, no delivery attempts to the placeholder.
+- [ ] **Step 4: Verify dormancy.** With `knarrWebhookUrl` unset, confirm the rendered `ntfy-critical` receiver has only the ntfy webhook (the Knarr entry omitted by the `{{- if }}` gate — check the live AlertManager config via `amtool config show`). Expected: AlertManager healthy, no second webhook present.
 - [ ] **Step 5: Commit** (`.commits/heimdall-knarr-seam.md`).
 
 ---

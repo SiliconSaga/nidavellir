@@ -34,7 +34,7 @@ In the Tailscale admin console → Settings → OAuth clients, create a client w
 
 Save the client id/secret to the gitignored root `.env`:
 
-```
+```bash
 export TS_OAUTH_CLIENT_ID=<id>
 export TS_OAUTH_CLIENT_SECRET=<secret>
 ```
