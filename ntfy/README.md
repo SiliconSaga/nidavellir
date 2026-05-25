@@ -76,6 +76,15 @@ Install the **ntfy app** (iOS App Store / Google Play / F-Droid). The phone must
 
 Critical alerts are published at ntfy priority `urgent`/max; warnings arrive as quiet pushes. Priority 5 is the strongest signal ntfy can send, but **piercing Do Not Disturb is an Android-side grant, not something priority alone achieves** — verified during homelab testing (a backgrounded phone in DND received the push silently). To let criticals interrupt DND, grant the ntfy app's max-priority channel the override: long-press an ntfy notification → Settings → the "Max priority (5)" channel → enable "Override Do Not Disturb" (or Settings → Notifications → Do Not Disturb → Apps → add ntfy). Only the max channel needs it, so warnings stay quiet. (ntfy auth: the composition sets `auth-default-access: deny-all`, so production subscriptions use an access token — see Secrets.)
 
+### Android tuning (learned during homelab testing)
+
+Android's notification controls have fanned out into per-channel sub-types, easy to lose in Settings. The reliable way in: **long-press a received ntfy notification → its gear/Settings**, rather than hunting blind through system Settings. Worth setting:
+
+- **Grant the max-priority channel "Override Do Not Disturb"** (above) — criticals pierce DND, warnings stay quiet. Verified: under DND, the urgent push sounded and the default one stayed silent.
+- **Disable notification "bundling"/grouping** for ntfy so alerts show individually rather than collapsed into a group.
+- **Allow the app to run in the background** (exempt from battery optimization). Self-hosted ntfy has no Firebase/FCM path, so instant delivery relies on the app holding a persistent connection to the server; if Android sleeps the app, pushes are delayed until it next wakes.
+- **Prefer WebSockets** for the subscription connection (the app suggests this) — the more efficient transport for that persistent connection. It passes through the Tailscale operator proxy fine (the WS upgrade is just HTTP over the forwarded TCP) and needs no server-side change; ntfy supports it natively.
+
 ## Device naming
 
 - The exposed Service's proxy device is named per environment: `ntfy-<env>` → `ntfy-gke`. Distinct names avoid MagicDNS collisions during the active/passive failover window.
