@@ -74,7 +74,7 @@ Install the **ntfy app** (iOS App Store / Google Play / F-Droid). The phone must
 2. Set the **server** to the self-hosted URL — `http://ntfy-gke.<tailnet>.ts.net` — **not** the default `ntfy.sh` (the default public server won't see our self-hosted topics).
 3. Topic: `heimdall-alerts`.
 
-Critical alerts are published at ntfy priority `urgent`/max, which can override the phone's Do Not Disturb; warnings arrive as quiet pushes. (ntfy auth: the composition sets `auth-default-access: deny-all`, so production subscriptions use an access token — see Secrets.)
+Critical alerts are published at ntfy priority `urgent`/max; warnings arrive as quiet pushes. Priority 5 is the strongest signal ntfy can send, but **piercing Do Not Disturb is an Android-side grant, not something priority alone achieves** — verified during homelab testing (a backgrounded phone in DND received the push silently). To let criticals interrupt DND, grant the ntfy app's max-priority channel the override: long-press an ntfy notification → Settings → the "Max priority (5)" channel → enable "Override Do Not Disturb" (or Settings → Notifications → Do Not Disturb → Apps → add ntfy). Only the max channel needs it, so warnings stay quiet. (ntfy auth: the composition sets `auth-default-access: deny-all`, so production subscriptions use an access token — see Secrets.)
 
 ## Device naming
 
