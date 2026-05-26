@@ -22,7 +22,7 @@
 ## File Structure
 
 **New (in `components/nidavellir/`):**
-- `ntfy/xrd.yaml` — XRD `XNtfy` (parameters: `replicas` override, `tailscaleHostname`, `topic`).
+- `ntfy/xrd.yaml` — XRD `XNtfy` (parameters: `replicasOverride`, `tailscaleHostname`, `baseUrl`, `environment`).
 - `ntfy/composition.yaml` — pipeline: load cluster-identity → render ntfy ConfigMap/Secret/PVC/Deployment/Service via provider-kubernetes Objects, env-aware.
 - `ntfy/claim.yaml` — the `Ntfy` claim.
 - `ntfy/README.md` — what it is, how to test, the Tailscale dependency.
@@ -176,14 +176,18 @@ spec:
                   properties:
                     replicasOverride:
                       type: integer
+                      minimum: 0
                       description: "Optional override for replica count. When unset, the composition sets 1 on gke (active) and 0 on homelab (cold standby)."
                     tailscaleHostname:
                       type: string
-                      default: "ntfy"
-                      description: "Tailnet device hostname for the ntfy Service (MagicDNS). gke only."
+                      description: "Optional override for the Tailnet device hostname (gke only). When unset, the composition derives ntfy-<env> (e.g. ntfy-gke). No XRD default — it would shadow the env-derived fallback."
                     baseUrl:
                       type: string
-                      description: "ntfy base-url (e.g. http://ntfy.<tailnet>.ts.net). Set per environment."
+                      description: "ntfy base-url (e.g. http://ntfy-<env>.<tailnet>.ts.net). Set per environment."
+                    environment:
+                      type: string
+                      enum: ["homelab", "gke"]
+                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity."
 ```
 
 - [ ] **Step 2: Validate YAML parses.** Run: `kubectl apply --dry-run=client -f components/nidavellir/ntfy/xrd.yaml`. Expected: `created (dry run)` with no schema errors.

@@ -41,16 +41,16 @@ spec:
       inline:
         template: |
           {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
-          {{- $env := .observed.composite.resource.spec.parameters.environment | default $identity.environment -}}
+          {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
+          {{- $env := $params.environment | default $identity.environment -}}
           {{- $storageClass := $identity.storageClass -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
           {{- /* Prefer the claim's name so in-cluster resources are predictable for
                  operators (the XR's metadata.name carries Crossplane's random
                  suffix). Falls back to $name when the XR was created directly. */ -}}
           {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
-          {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
           {{- $replicas := 0 -}}
-          {{- if $params.replicasOverride -}}
+          {{- if hasKey $params "replicasOverride" -}}
             {{- $replicas = $params.replicasOverride -}}
           {{- else if eq $env "gke" -}}
             {{- $replicas = 1 -}}
