@@ -1,0 +1,49 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xntfys.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XNtfy
+    plural: xntfys
+  claimNames:
+    kind: Ntfy
+    plural: ntfys
+  defaultCompositionRef:
+    name: xntfy-default
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    replicasOverride:
+                      type: integer
+                      minimum: 0
+                      description: "Optional override for replica count. When unset, the composition sets 1 on gke (active) and 0 on homelab (cold standby)."
+                    tailscaleHostname:
+                      type: string
+                      description: "Optional override for the Tailnet device hostname (MagicDNS, gke only). When UNSET, the composition derives ntfy-<env> (e.g. ntfy-gke). Do not give this an XRD default — a default fills the param and shadows the composition's env-derived fallback."
+                    baseUrl:
+                      type: string
+                      description: "ntfy base-url (e.g. http://ntfy.<tailnet>.ts.net). Set per environment."
+                    environment:
+                      type: string
+                      enum: ["homelab", "gke"]
+                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity. Controls replica count and the gke-only Tailscale Service annotations."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status

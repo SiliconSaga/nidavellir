@@ -1,0 +1,20 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: Ntfy
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  parameters:
+    # Tailscale device name defaults to "ntfy-<env>" (e.g. ntfy-gke), distinguished
+    # per environment to avoid MagicDNS collisions during failover. GKE is singular
+    # and stable; homelab exposure is deferred (two resettable boxes — name per-box,
+    # not generic "homelab", when it lands). Override tailscaleHostname for a custom name.
+    #
+    # Set explicitly (rather than relying on the composition's env-derived default)
+    # so the device name is unambiguous and matches base-url below. The composition
+    # still derives ntfy-<env> when this is omitted.
+    tailscaleHostname: ntfy-gke
+    # base-url is the tailnet MagicDNS URL ntfy serves itself at (gke active hub).
+    # http is fine — the tailnet encrypts transport. When homelab exposure lands,
+    # both should become env-derived (EnvironmentConfig) rather than hardcoded here.
+    baseUrl: "http://ntfy-gke.tailf5b47a.ts.net"

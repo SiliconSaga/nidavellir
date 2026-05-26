@@ -1,0 +1,37 @@
+# ArgoCD Application for the Tailscale Kubernetes operator.
+#
+# Joins the cluster to the tailnet so Services annotated `tailscale.com/expose`
+# (e.g. ntfy on GKE) get a tailnet device + MagicDNS name — no public ingress.
+# Requires the `operator-oauth` Secret (clientId/clientSecret) pre-created in the
+# `tailscale` namespace out-of-band; see ntfy/README.md.
+#
+# The chart's default volume wiring already references a Secret named
+# `operator-oauth` (with keys `client_id` and `client_secret`) when
+# oauthSecretVolume is unset — no additional Helm values needed.
+#
+# Sync-wave 4: before ntfy (wave 6) so the operator is ready to expose its Service.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://pkgs.tailscale.com/helmcharts
+    chart: tailscale-operator
+    targetRevision: "1.98.3"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
