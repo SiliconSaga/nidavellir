@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-templates
+  namespace: ntfy
+data:
+  heimdall.yml: |
+    title: "{{.commonLabels.alertname}} [{{.status}}]"
+    message: "{{range .alerts}}- {{.annotations.summary}}\n{{end}}"
+    priority: "{{if eq .commonLabels.severity \"critical\"}}5{{else if eq .commonLabels.severity \"warning\"}}3{{else}}2{{end}}"

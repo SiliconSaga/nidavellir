@@ -79,6 +79,8 @@ spec:
                     {{ end -}}
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
+                    auth-access:
+                      - "everyone:heimdall-alerts:rw"
                     cache-file: "/var/lib/ntfy/cache.db"
                     behind-proxy: true
           ---
@@ -154,6 +156,8 @@ spec:
                           subPath: server.yml
                         - name: data
                           mountPath: /var/lib/ntfy
+                        - name: templates
+                          mountPath: /etc/ntfy/templates
                       volumes:
                       - name: config
                         configMap:
@@ -161,6 +165,9 @@ spec:
                       - name: data
                         persistentVolumeClaim:
                           claimName: ntfy-data
+                      - name: templates
+                        configMap:
+                          name: ntfy-templates
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object
