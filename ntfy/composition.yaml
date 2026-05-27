@@ -125,6 +125,11 @@ spec:
                     claim: {{ $claimName }}
                 spec:
                   replicas: {{ $replicas }}
+                  # Recreate (not RollingUpdate): the data PVC is ReadWriteOnce, so a
+                  # rolling update deadlocks on multi-attach — the new pod can't mount the
+                  # volume the old pod still holds (maxUnavailable rounds to 0 at 1 replica).
+                  strategy:
+                    type: Recreate
                   selector:
                     matchLabels:
                       app: ntfy
