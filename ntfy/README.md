@@ -74,7 +74,7 @@ Install the **ntfy app** (iOS App Store / Google Play / F-Droid). The phone must
 2. Set the **server** to the self-hosted URL — `http://ntfy-gke.<tailnet>.ts.net` — **not** the default `ntfy.sh` (the default public server won't see our self-hosted topics).
 3. Topic: `heimdall-alerts`.
 
-Critical alerts are published at ntfy priority `urgent`/max; warnings arrive as quiet pushes. Priority 5 is the strongest signal ntfy can send, but **piercing Do Not Disturb is an Android-side grant, not something priority alone achieves** — verified during homelab testing (a backgrounded phone in DND received the push silently). To let criticals interrupt DND, grant the ntfy app's max-priority channel the override: long-press an ntfy notification → Settings → the "Max priority (5)" channel → enable "Override Do Not Disturb" (or Settings → Notifications → Do Not Disturb → Apps → add ntfy). Only the max channel needs it, so warnings stay quiet. (ntfy auth: the composition sets `auth-default-access: deny-all`, so production subscriptions use an access token — see Secrets.)
+Critical alerts are published at ntfy priority `urgent`/max; warnings arrive as quiet pushes. Priority 5 is the strongest signal ntfy can send, but **piercing Do Not Disturb is an Android-side grant, not something priority alone achieves** — verified during homelab testing (a backgrounded phone in DND received the push silently). To let criticals interrupt DND, grant the ntfy app's max-priority channel the override: long-press an ntfy notification → Settings → the "Max priority (5)" channel → enable "Override Do Not Disturb" (or Settings → Notifications → Do Not Disturb → Apps → add ntfy). Only the max channel needs it, so warnings stay quiet. This DND override is **Android-specific** — iOS apps can't bypass Focus/Do Not Disturb except via Apple's *Critical Alerts* entitlement (a special provisioning profile, not configured here), so the long-press/channel steps above are Android-only. (How priority is set, and the auth model, are covered in [Alert formatting & auth](#alert-formatting--auth).)
 
 ### Android tuning (learned during homelab testing)
 
@@ -84,6 +84,25 @@ Android's notification controls have fanned out into per-channel sub-types, easy
 - **Disable notification "bundling"/grouping** for ntfy so alerts show individually rather than collapsed into a group.
 - **Allow the app to run in the background** (exempt from battery optimization). Self-hosted ntfy has no Firebase/FCM path, so instant delivery relies on the app holding a persistent connection to the server; if Android sleeps the app, pushes are delayed until it next wakes.
 - **Prefer WebSockets** for the subscription connection (the app suggests this) — the more efficient transport for that persistent connection. It passes through the Tailscale operator proxy fine (the WS upgrade is just HTTP over the forwarded TCP) and needs no server-side change; ntfy supports it natively.
+
+## Alert formatting & auth
+
+AlertManager can't set ntfy's `Priority` header (its webhook sends a fixed JSON body, no custom headers), so formatting and priority happen **server-side** via a named ntfy template. The `ntfy-templates` ConfigMap (`heimdall-template.yaml`) ships `heimdall.yml`, mounted at ntfy's default `--template-dir` (`/etc/ntfy/templates`); AlertManager posts to `…/heimdall-alerts?template=heimdall` and ntfy renders:
+
+- **title** ← `alertname [status]`
+- **message** ← one line per alert (`- <summary>`)
+- **priority** ← `severity`: `critical` → 5 (urgent / DND-pierce), `warning` → 3, otherwise 2
+
+The template ships as a plain manifest (not inside the composition) so its `{{ … }}` reach the cluster verbatim — the composition's body is itself go-templated, which would otherwise eat the braces.
+
+Auth is **declarative**, set in `server.yml` by the composition — no manual `ntfy access` command. `auth-default-access: deny-all` blocks everything, and a single grant —
+
+```yaml
+auth-access:
+  - "everyone:heimdall-alerts:rw"
+```
+
+— lets anonymous clients publish and subscribe to `heimdall-alerts` only (verified against ntfy v2.23.0: the `everyone` identifier and `rw` code work; an anonymous publish to `heimdall-alerts` returns 200, any other topic 403). AlertManager and the phone both connect anonymously. The **tailnet remains the network perimeter** — only tailnet members reach port 80 (per the `tag:ntfy` ACL grant), so anonymous-but-tailnet-gated is the intended model; every other topic stays denied.
 
 ## Device naming
 
@@ -104,4 +123,4 @@ Android's notification controls have fanned out into per-channel sub-types, easy
 
 ## Secrets
 
-`operator-oauth` (Tailscale) and the ntfy access token live in Kubernetes Secrets per environment for now; migrate to OpenBAO when it ships, consistent with the Gitea-credentials trajectory.
+`operator-oauth` (Tailscale) lives in a Kubernetes Secret per environment for now; migrate to OpenBAO when it ships, consistent with the Gitea-credentials trajectory. ntfy itself needs no secret today — `heimdall-alerts` is an anonymous, tailnet-gated topic (see [Alert formatting & auth](#alert-formatting--auth)); a future authenticated topic would add a token here.
