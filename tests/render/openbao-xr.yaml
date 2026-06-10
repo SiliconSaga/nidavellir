@@ -1,0 +1,11 @@
+# Offline-render fixture: a bare XOpenBao XR (render takes XRs, not claims).
+# Usage (from the nidavellir repo root, crossplane CLI + Docker required):
+#   crossplane render tests/render/openbao-xr.yaml openbao/composition.yaml \
+#     tests/render/functions.yaml --extra-resources tests/render/cluster-identity-homelab.yaml
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XOpenBao
+metadata:
+  name: openbao
+spec:
+  parameters:
+    storageSize: "2Gi"

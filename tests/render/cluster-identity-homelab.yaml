@@ -1,0 +1,10 @@
+# Offline-render stand-in for the homelab cluster-identity EnvironmentConfig
+# (in-cluster it's applied by nordri layer4-fundamentals).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: cluster-identity
+data:
+  domain: homelab.local
+  environment: homelab
+  storageClass: local-path
