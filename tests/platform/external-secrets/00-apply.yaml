@@ -1,0 +1,38 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      set -e
+      # Root token lives in its own key on the openbao-init Secret (created
+      # during the human-gated init flow) so no JSON parsing is needed here —
+      # the kuttl image has kubectl + busybox but no jq. Fail loudly if absent.
+      ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "openbao-init Secret missing or has no root_token key - run the init flow (plan Task A1.5) first" >&2
+        exit 1
+      fi
+      # Seed a known KV value, then read it back so a failed write fails the
+      # test here rather than letting stale data satisfy the later assertion.
+      kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secret/kuttl-demo k=v
+      kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv get -field=k secret/kuttl-demo | grep -qx v
+      # ExternalSecret in the kuttl test namespace; ESO materializes it from
+      # OpenBao via the openbao-kv ClusterSecretStore (cluster-scoped, so it
+      # serves any namespace including this ephemeral one).
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      metadata:
+        name: kuttl-demo
+      spec:
+        refreshInterval: 1m
+        secretStoreRef:
+          name: openbao-kv
+          kind: ClusterSecretStore
+        target:
+          name: kuttl-demo
+        data:
+          - secretKey: k
+            remoteRef:
+              key: secret/kuttl-demo
+              property: k
+      EOF

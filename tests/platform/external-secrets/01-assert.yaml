@@ -1,0 +1,8 @@
+# The Secret only exists if ESO authenticated to OpenBao (Kubernetes auth,
+# eso-role) and read the value this test wrote in step 00 — asserting its
+# presence proves the whole ESO → OpenBao path.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kuttl-demo
+type: Opaque
