@@ -1,0 +1,39 @@
+# ArgoCD Application for OpenBao (secrets substrate, Leiðangr Phase 1a).
+#
+# Deploys the XOpenBao XRD + Composition + OpenBaoInstance claim from the
+# nidavellir repo's openbao/ directory. Single-node Raft, env-aware via
+# cluster-identity (storageClass + ingress domain). Minimal unseal posture:
+# manual init/unseal after first sync — the pod runs but stays Not Ready
+# until an operator unseals it (see the Phase 1a plan in realm-siliconsaga).
+#
+# Sync-wave 10: after ESO (wave 9) so the ClusterSecretStore in openbao/
+# has its CRD available when this app syncs.
+#
+# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
+# is stable, swap repoURL to GitHub and add an ArgoCD repository credential Secret.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
+    targetRevision: HEAD
+    path: openbao
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true

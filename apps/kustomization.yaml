@@ -14,7 +14,7 @@ resources:
   - cluster-identity-demo-app.yaml
   - tailscale-operator-app.yaml
   - ntfy-app.yaml
+  - openbao-app.yaml
   # keycloak-app.yaml    # TODO: add when Keycloak is deployed
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
-  # openbao-app.yaml     # TODO: add when OpenBAO is deployed
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir
