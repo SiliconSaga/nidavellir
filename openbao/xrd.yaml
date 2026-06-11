@@ -19,6 +19,7 @@ spec:
       schema:
         openAPIV3Schema:
           type: object
+          description: "Singleton per cluster: the composition pins the openbao namespace and workload/Service names (fullnameOverride) so consumers get stable references. Create exactly one OpenBaoInstance claim per cluster — a second claim collides on those fixed names by design."
           properties:
             spec:
               type: object

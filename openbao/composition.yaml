@@ -29,12 +29,16 @@ spec:
 
   # ──────────────────────────────────────────────────────────
   # Step 1: OpenBao Helm Release (single-node Raft, minimal
-  # unseal posture — manual init/unseal, see openbao/README.md).
+  # unseal posture — manual init/unseal, runbooks in
+  # docs/secrets-management.md).
   # fullnameOverride pins the workload/Service names to plain
   # `openbao` (pod openbao-0, svc openbao) — without it the helm
   # release name inherits the XR's random claim suffix and every
   # stable reference (ClusterSecretStore URL, HTTPRoute backend,
-  # kuttl asserts) would chase a moving name.
+  # kuttl asserts) would chase a moving name. Deliberate
+  # consequence: this composition is SINGLETON-per-cluster (one
+  # claim, fixed `openbao` namespace + names); a second claim
+  # would collide by design. Contract documented on the XRD.
   # ──────────────────────────────────────────────────────────
   - step: deploy-openbao
     functionRef:

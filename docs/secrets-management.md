@@ -155,5 +155,6 @@ Staging: accept the loss — delete the openbao PVC and Helm release pod state, 
 ## What's deliberately NOT here yet
 
 - **KMS auto-unseal + HA** — the hardening phase. Until then, restarts need a human.
+- **TLS inside the cluster** — the listener runs `tls_disable = 1` and ESO talks to `http://openbao.openbao.svc:8200`, so secret values transit the cluster network in plaintext between OpenBao and ESO. Accepted for the staging substrate; the hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
 - **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak (Phase 1b) consumes static values via ESO first; dynamic DB credentials are a later conversation.
 - **App-side OpenBao SDKs / agent injector** — intentionally avoided (ADR 0003). Consume through ExternalSecrets; if you think you need direct API access from a workload, raise it as a design question first.
