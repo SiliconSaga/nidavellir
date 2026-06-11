@@ -1,0 +1,47 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xopenbaos.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XOpenBao
+    plural: xopenbaos
+  claimNames:
+    kind: OpenBaoInstance
+    plural: openbaoinstances
+  defaultCompositionRef:
+    name: xopenbao-standalone
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: "Singleton per cluster: the composition pins the openbao namespace and workload/Service names (fullnameOverride) so consumers get stable references. Create exactly one OpenBaoInstance claim per cluster — a second claim collides on those fixed names by design."
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    storageSize:
+                      type: string
+                      default: "2Gi"
+                      description: "PVC size for the Raft data volume."
+                    chartVersion:
+                      type: string
+                      default: "0.28.3"
+                      description: "OpenBao Helm chart version (chart 0.28.3 = OpenBao v2.5.4)."
+                    domain:
+                      type: string
+                      description: "Override the cluster-identity domain for the ingress host. When unset, the HTTPRoute host is openbao.<cluster-identity domain>."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status

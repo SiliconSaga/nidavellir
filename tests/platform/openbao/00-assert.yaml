@@ -1,0 +1,12 @@
+# OpenBao server up and unsealed. readyReplicas only goes 1 after init +
+# unseal (the readiness probe gates on seal status), so this asserts the
+# full minimal-posture flow happened, not just that the pod scheduled.
+# The StatefulSet is named plain `openbao` via the composition's
+# fullnameOverride.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openbao
+  namespace: openbao
+status:
+  readyReplicas: 1

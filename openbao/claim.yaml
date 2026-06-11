@@ -1,0 +1,8 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: OpenBaoInstance
+metadata:
+  name: openbao
+  namespace: openbao
+spec:
+  parameters:
+    storageSize: "2Gi"

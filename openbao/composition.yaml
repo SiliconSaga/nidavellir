@@ -1,0 +1,152 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xopenbao-standalone
+  labels:
+    provider: openbao
+spec:
+  mode: Pipeline
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XOpenBao
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (EnvironmentConfig → context).
+  # Provides storageClass + domain per environment (homelab/gke).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: OpenBao Helm Release (single-node Raft, minimal
+  # unseal posture — manual init/unseal, runbooks in
+  # docs/secrets-management.md).
+  # fullnameOverride pins the workload/Service names to plain
+  # `openbao` (pod openbao-0, svc openbao) — without it the helm
+  # release name inherits the XR's random claim suffix and every
+  # stable reference (ClusterSecretStore URL, HTTPRoute backend,
+  # kuttl asserts) would chase a moving name. Deliberate
+  # consequence: this composition is SINGLETON-per-cluster (one
+  # claim, fixed `openbao` namespace + names); a second claim
+  # would collide by design. Contract documented on the XRD.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-openbao
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $storageClass := $identity.storageClass -}}
+          {{- $version := .observed.composite.resource.spec.parameters.chartVersion | default "0.28.3" -}}
+          {{- $size := .observed.composite.resource.spec.parameters.storageSize | default "2Gi" -}}
+          apiVersion: helm.crossplane.io/v1beta1
+          kind: Release
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-openbao
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: openbao-release
+          spec:
+            forProvider:
+              chart:
+                name: openbao
+                repository: https://openbao.github.io/openbao-helm
+                version: "{{ $version }}"
+              namespace: openbao
+              values:
+                fullnameOverride: openbao
+                injector:
+                  enabled: false
+                server:
+                  standalone:
+                    enabled: true
+                    config: |
+                      ui = true
+                      listener "tcp" {
+                        address         = "[::]:8200"
+                        cluster_address = "[::]:8201"
+                        tls_disable     = 1
+                      }
+                      storage "raft" {
+                        path = "/openbao/data"
+                      }
+                  dataStorage:
+                    enabled: true
+                    size: {{ $size }}
+                    storageClass: {{ $storageClass }}
+                  ha:
+                    enabled: false
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: HTTPRoute via provider-kubernetes Object. TLS comes
+  # free from the wildcard cert on the Gateway's websecure
+  # listener (vegvisir); host resolves per-env via $domain.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-ingress
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $domain := .observed.composite.resource.spec.parameters.domain | default $identity.domain -}}
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-openbao-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: openbao-route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: openbao
+                  namespace: openbao
+                spec:
+                  parentRefs:
+                    - name: traefik-gateway
+                      namespace: kube-system
+                      kind: Gateway
+                      sectionName: websecure
+                  hostnames:
+                    - "openbao.{{ $domain }}"
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - name: openbao
+                          port: 8200
+
+  # ──────────────────────────────────────────────────────────
+  # Step 3: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready
