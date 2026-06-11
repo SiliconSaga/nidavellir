@@ -69,6 +69,15 @@ Phase 1a runs the **minimal unseal posture** (ADR 0002). The init output — uns
 - **GKE (live):** the same Secret exists for operational convenience, but the unseal shares and root token ALSO go into the operator's password manager at init time, BEFORE the in-cluster copy is created. If the cluster eats the Secret, you can still unseal.
 - **Hardening phase (future):** GCP KMS auto-unseal replaces the manual flow and retires the parked shares entirely.
 
+### Security limitations (read these before reusing the pattern anywhere serious)
+
+Spelled out so nobody has to infer severity from the narrative above:
+
+- **Anyone who can read Secrets in the `openbao` namespace owns the whole substrate.** The parked `root_token` grants unrestricted OpenBao operations (read everything, rewrite policies, reconfigure auth), and the parked unseal shares let them unseal after any restart — which defeats the multi-party control that Shamir splitting exists to provide. The live-env password-manager copy mitigates *key loss*, not this *exposure*.
+- **Secret values cross the cluster network in plaintext.** The listener runs `tls_disable = 1` and ESO reads over `http://openbao.openbao.svc:8200`, so anything with in-cluster network visibility (pod exec in the `openbao`/`external-secrets` namespaces, CNI-level capture, a future service-mesh sidecar) can observe values during ESO refresh cycles.
+
+Both are accepted for the staging substrate and synthetic data only. Treat them as **blocking** for anything holding real credentials or member data until the hardening phase lands (KMS auto-unseal for custody; cert-manager/vegvisir-issued listener cert + HTTPS/`caBundle` on the store for transit).
+
 ## How to use it (the 90% case)
 
 **Put a value in** (any path under `secret/`):
@@ -77,6 +86,8 @@ Phase 1a runs the **minimal unseal posture** (ADR 0002). The init output — uns
 ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
 kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secret/myapp api-key=swordfish
 ```
+
+Using the root token here is a staging-posture convenience. Best practice reserves the root token for bootstrap and recovery; if you're doing routine value management (or copying this pattern toward production), mint a scoped operator token instead — `bao policy write kv-write` with write capabilities over `secret/data/*`, then `bao token create -policy=kv-write -ttl=8h` — and use that as `BAO_TOKEN`.
 
 **Consume it from any namespace** — declare an ExternalSecret; ESO materializes and refreshes a plain Secret next to your workload:
 
@@ -155,6 +166,6 @@ Staging: accept the loss — delete the openbao PVC and Helm release pod state, 
 ## What's deliberately NOT here yet
 
 - **KMS auto-unseal + HA** — the hardening phase. Until then, restarts need a human.
-- **TLS inside the cluster** — the listener runs `tls_disable = 1` and ESO talks to `http://openbao.openbao.svc:8200`, so secret values transit the cluster network in plaintext between OpenBao and ESO. Accepted for the staging substrate; the hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
+- **TLS inside the cluster** — an active risk, not just a missing feature; see "Security limitations" above for the exposure scope. The hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
 - **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak (Phase 1b) consumes static values via ESO first; dynamic DB credentials are a later conversation.
 - **App-side OpenBao SDKs / agent injector** — intentionally avoided (ADR 0003). Consume through ExternalSecrets; if you think you need direct API access from a workload, raise it as a design question first.
