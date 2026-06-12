@@ -1,0 +1,448 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xssodemo-default
+spec:
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XSSODemo
+  mode: Pipeline
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (environment drives the OIDC
+  # wiring + which routes render).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: The demo — secrets fan-out, realm import, whoami,
+  # oauth2-proxy, routes. One OpenBao path (secret/sso-demo)
+  # feeds BOTH sides of the OIDC handshake: the realm import
+  # injects the client secret + demo-user password via
+  # placeholders, and oauth2-proxy consumes the same values.
+  #
+  # Env branches (the reason this is a composition at all):
+  #   gke     — clean OIDC discovery against the external issuer
+  #             (https://keycloak.cmdbee.org), secure cookies,
+  #             route on websecure at sso-demo.cmdbee.org.
+  #   homelab — split-horizon lab config: browser-facing login
+  #             URL on keycloak.localhost (web listener — the
+  #             gitea.localhost pattern), backchannel token/JWKS
+  #             via the in-cluster service, issuer verification
+  #             relaxed, plain-HTTP cookies. The lab compromises
+  #             live ONLY in this branch. Also renders the
+  #             keycloak.localhost route so the IdP itself is
+  #             browser-reachable (homelab-only on purpose — on
+  #             gke that would expose plain-HTTP Keycloak).
+  #
+  # Object readiness is left at provider defaults (applied =
+  # ready): the ExternalSecrets and realm import deliberately
+  # wait for OpenBao seeding (see README), so applied-but-
+  # converging is the expected resting state until then. The
+  # kuttl case asserts actual convergence.
+  # ──────────────────────────────────────────────────────────
+  - step: render-demo
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
+          {{- $env := $params.environment | default $identity.environment -}}
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-realm-secrets
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: realm-secrets
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: sso-demo-realm-secrets
+                  namespace: keycloak
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: openbao-kv
+                    kind: ClusterSecretStore
+                  target:
+                    name: sso-demo-realm-secrets
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                    - secretKey: client-secret
+                      remoteRef:
+                        key: secret/sso-demo
+                        property: client-secret
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+                    - secretKey: demo-user-password
+                      remoteRef:
+                        key: secret/sso-demo
+                        property: demo-user-password
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-app-secrets
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: app-secrets
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: sso-demo-oauth2-proxy
+                  namespace: sso-demo
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: openbao-kv
+                    kind: ClusterSecretStore
+                  target:
+                    name: sso-demo-oauth2-proxy
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                    - secretKey: client-secret
+                      remoteRef:
+                        key: secret/sso-demo
+                        property: client-secret
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+                    - secretKey: cookie-secret
+                      remoteRef:
+                        key: secret/sso-demo
+                        property: cookie-secret
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-realm-import
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: realm-import
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: k8s.keycloak.org/v2beta1
+                kind: KeycloakRealmImport
+                metadata:
+                  name: demo-realm
+                  namespace: keycloak
+                spec:
+                  keycloakCRName: keycloak
+                  placeholders:
+                    SSO_DEMO_CLIENT_SECRET:
+                      secret:
+                        name: sso-demo-realm-secrets
+                        key: client-secret
+                    SSO_DEMO_USER_PASSWORD:
+                      secret:
+                        name: sso-demo-realm-secrets
+                        key: demo-user-password
+                  realm:
+                    realm: demo
+                    enabled: true
+                    displayName: "SSO Demo"
+                    clients:
+                      - clientId: sso-demo
+                        name: "SSO demo (oauth2-proxy + whoami)"
+                        enabled: true
+                        protocol: openid-connect
+                        publicClient: false
+                        secret: "${SSO_DEMO_CLIENT_SECRET}"
+                        standardFlowEnabled: true
+                        directAccessGrantsEnabled: true
+                        redirectUris:
+                          - "https://sso-demo.cmdbee.org/oauth2/callback"
+                          - "http://sso-demo.localhost/oauth2/callback"
+                    users:
+                      - username: demo
+                        enabled: true
+                        email: demo@example.com
+                        emailVerified: true
+                        firstName: Demo
+                        lastName: User
+                        credentials:
+                          - type: password
+                            value: "${SSO_DEMO_USER_PASSWORD}"
+                            temporary: false
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-whoami-deployment
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: whoami-deployment
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: whoami
+                  namespace: sso-demo
+                  labels:
+                    app: whoami
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: whoami
+                  template:
+                    metadata:
+                      labels:
+                        app: whoami
+                    spec:
+                      containers:
+                      - name: whoami
+                        image: traefik/whoami:v1.10
+                        ports:
+                        - name: http
+                          containerPort: 80
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 16Mi
+                          limits:
+                            cpu: 100m
+                            memory: 64Mi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-whoami-service
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: whoami-service
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: whoami
+                  namespace: sso-demo
+                spec:
+                  selector:
+                    app: whoami
+                  ports:
+                  - name: http
+                    port: 80
+                    targetPort: http
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-oauth2-proxy-deployment
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: oauth2-proxy-deployment
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: oauth2-proxy
+                  namespace: sso-demo
+                  labels:
+                    app: oauth2-proxy
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: oauth2-proxy
+                  template:
+                    metadata:
+                      labels:
+                        app: oauth2-proxy
+                    spec:
+                      containers:
+                      - name: oauth2-proxy
+                        image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+                        args:
+                        - --provider=oidc
+                        - --provider-display-name=Keycloak
+                        - --client-id=sso-demo
+                        - --http-address=0.0.0.0:4180
+                        - --upstream=http://whoami.sso-demo.svc:80
+                        - --email-domain=*
+                        - --pass-user-headers=true
+                        - --reverse-proxy=true
+                        - --skip-provider-button=true
+                        {{- if eq $env "gke" }}
+                        - --oidc-issuer-url=https://keycloak.cmdbee.org/realms/demo
+                        - --redirect-url=https://sso-demo.cmdbee.org/oauth2/callback
+                        - --cookie-secure=true
+                        {{- else }}
+                        - --oidc-issuer-url=http://keycloak.localhost/realms/demo
+                        - --skip-oidc-discovery=true
+                        - --login-url=http://keycloak.localhost/realms/demo/protocol/openid-connect/auth
+                        - --redeem-url=http://keycloak-service.keycloak.svc:8080/realms/demo/protocol/openid-connect/token
+                        - --oidc-jwks-url=http://keycloak-service.keycloak.svc:8080/realms/demo/protocol/openid-connect/certs
+                        - --insecure-oidc-skip-issuer-verification=true
+                        - --redirect-url=http://sso-demo.localhost/oauth2/callback
+                        - --cookie-secure=false
+                        {{- end }}
+                        env:
+                        - name: OAUTH2_PROXY_CLIENT_SECRET
+                          valueFrom:
+                            secretKeyRef:
+                              name: sso-demo-oauth2-proxy
+                              key: client-secret
+                        - name: OAUTH2_PROXY_COOKIE_SECRET
+                          valueFrom:
+                            secretKeyRef:
+                              name: sso-demo-oauth2-proxy
+                              key: cookie-secret
+                        ports:
+                        - name: http
+                          containerPort: 4180
+                        resources:
+                          requests:
+                            cpu: 25m
+                            memory: 32Mi
+                          limits:
+                            cpu: 250m
+                            memory: 128Mi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-oauth2-proxy-service
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: oauth2-proxy-service
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: oauth2-proxy
+                  namespace: sso-demo
+                spec:
+                  selector:
+                    app: oauth2-proxy
+                  ports:
+                  - name: http
+                    port: 4180
+                    targetPort: http
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: demo-route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: sso-demo
+                  namespace: sso-demo
+                spec:
+                  parentRefs:
+                    - group: gateway.networking.k8s.io
+                      kind: Gateway
+                      name: traefik-gateway
+                      namespace: kube-system
+                      {{- if eq $env "gke" }}
+                      sectionName: websecure
+                      {{- else }}
+                      sectionName: web
+                      {{- end }}
+                  hostnames:
+                    {{- if eq $env "gke" }}
+                    - "sso-demo.cmdbee.org"
+                    {{- else }}
+                    - "sso-demo.localhost"
+                    {{- end }}
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - group: ""
+                          kind: Service
+                          name: oauth2-proxy
+                          port: 4180
+                          weight: 1
+          {{- if ne $env "gke" }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-keycloak-localhost-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: keycloak-localhost-route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: keycloak-localhost
+                  namespace: keycloak
+                spec:
+                  parentRefs:
+                    - group: gateway.networking.k8s.io
+                      kind: Gateway
+                      name: traefik-gateway
+                      namespace: kube-system
+                      sectionName: web
+                  hostnames:
+                    - "keycloak.localhost"
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - group: ""
+                          kind: Service
+                          name: keycloak-service
+                          port: 8080
+                          weight: 1
+          {{- end }}
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready

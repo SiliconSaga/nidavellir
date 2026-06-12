@@ -1,0 +1,6 @@
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: SSODemo
+metadata:
+  name: sso-demo
+  namespace: sso-demo
+spec: {}

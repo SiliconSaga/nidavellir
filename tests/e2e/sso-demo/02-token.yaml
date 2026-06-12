@@ -1,0 +1,36 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      set -e
+      # The load-bearing check: a real password-grant token from the
+      # demo realm, authenticating with the client secret and user
+      # password that ESO materialized FROM OPENBAO. Success proves
+      # OpenBao -> ESO -> realm-import placeholders -> live Keycloak
+      # client in one call. Retries cover post-seed convergence (ESO
+      # refresh + realm-import job) — expected to settle well within
+      # the budget.
+      CLIENT_SECRET=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.client-secret}' | base64 -d)
+      USER_PASSWORD=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.demo-user-password}' | base64 -d)
+      kubectl delete pod sso-token-probe -n $NAMESPACE --ignore-not-found
+      kubectl run sso-token-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE \
+        --env="CLIENT_SECRET=$CLIENT_SECRET" --env="USER_PASSWORD=$USER_PASSWORD" -- \
+        sh -c 'for i in $(seq 1 24); do
+          curl -fsS -X POST http://keycloak-service.keycloak.svc:8080/realms/demo/protocol/openid-connect/token \
+            -d grant_type=password -d client_id=sso-demo \
+            -d client_secret="$CLIENT_SECRET" -d username=demo -d password="$USER_PASSWORD" \
+            | grep -q access_token && exit 0
+          sleep 10
+        done; exit 1'
+      RESULT=1
+      for i in $(seq 1 140); do
+        PHASE=$(kubectl get pod sso-token-probe -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
+        if [ "$PHASE" = "Succeeded" ]; then RESULT=0; break; fi
+        if [ "$PHASE" = "Failed" ]; then break; fi
+        sleep 2
+      done
+      if [ "$RESULT" -ne 0 ]; then
+        kubectl logs sso-token-probe -n $NAMESPACE >&2 || true
+      fi
+      kubectl delete pod sso-token-probe -n $NAMESPACE --ignore-not-found
+      exit $RESULT

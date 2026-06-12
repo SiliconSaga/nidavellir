@@ -1,0 +1,40 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xssodemos.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XSSODemo
+    plural: xssodemos
+  claimNames:
+    kind: SSODemo
+    plural: ssodemos
+  defaultCompositionRef:
+    name: xssodemo-default
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: "The Phase 1 capstone demo: oauth2-proxy + whoami doing real OIDC against the disposable `demo` Keycloak realm, with the client secret and demo-user password born in OpenBao and delivered by ESO to both sides of the handshake. Env-aware via cluster-identity: cmdbee.org/websecure on gke, *.localhost/web on homelab. Singleton per cluster (fixed names/namespaces); seed secret/sso-demo in OpenBao before expecting convergence — see sso-demo/README.md."
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    environment:
+                      type: string
+                      enum: ["homelab", "gke"]
+                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity. Drives the oauth2-proxy OIDC wiring (clean external discovery on gke vs split-horizon lab config on homelab) and which HTTPRoutes render."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status
