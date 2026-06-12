@@ -1,0 +1,43 @@
+# ArgoCD Application for the Keycloak Operator (Leiðangr Phase 1b).
+#
+# Syncs the upstream operator manifests (CRDs + controller) from the
+# SiliconSaga VENDOR MIRROR of keycloak/keycloak-k8s-resources, pinned to
+# the 26.6.3 tag. The mirror pattern keeps 18k lines of third-party CRD
+# schema out of this repo (stats, review bots, IDE agents) while staying
+# fully reproducible: the mirror is declared `tier: vendor` in the realm
+# ecosystem.yaml, `ws clone` fetches it with everything else, and
+# update-embedded-git.sh pushes its real history + tags into the seed
+# Gitea — which is what makes this tag pin resolvable in-cluster.
+# Version bumps = retag-sync the mirror, bump targetRevision here.
+#
+# Sync-wave 8: before the keycloak instance app (wave 12) so CRDs and
+# controller exist first. ServerSideApply is load-bearing: the Keycloak
+# CRDs exceed the client-side-apply annotation limit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak-operator
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/keycloak-k8s-resources.git'
+    targetRevision: "26.6.3"
+    path: kubernetes
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true

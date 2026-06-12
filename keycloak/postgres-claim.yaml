@@ -1,0 +1,20 @@
+# Keycloak's database: a Mimir PostgreSQLInstance claim. Mimir's Percona
+# composition provisions the cluster, a ClusterIP Service named after the
+# claim (keycloak-postgres:5432), and the Percona user secret
+# keycloak-postgres-user-secret (keys incl. user/password) that the
+# Keycloak CR wires its db credentials from.
+apiVersion: database.example.org/v1alpha1
+kind: PostgreSQLInstance
+metadata:
+  name: keycloak-postgres
+  namespace: keycloak
+spec:
+  parameters:
+    storageSize: 5Gi
+    version: "15"
+    replicas: 1
+    databaseName: keycloak
+  compositionSelector:
+    matchLabels:
+      provider: percona
+      service: postgresql
