@@ -64,6 +64,13 @@ spec:
           {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
           {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
           {{- $env := $params.environment | default $identity.environment -}}
+          {{- /* Fail closed: a missing/empty/typoed cluster-identity.environment
+                 must NOT silently fall through to the homelab branch and render
+                 the insecure lab config (cookie-secure=false, skipped issuer
+                 verification, plain-HTTP routes) on a real cluster. */ -}}
+          {{- if and (ne $env "gke") (ne $env "homelab") -}}
+          {{- fail (printf "SSODemo: environment must be 'gke' or 'homelab', got %q (set cluster-identity.environment or spec.parameters.environment)" $env) -}}
+          {{- end -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2

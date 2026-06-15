@@ -27,26 +27,34 @@ trap 'rm -f "$tmp_home" "$tmp_gke"' EXIT
 render homelab > "$tmp_home"
 render gke     > "$tmp_gke"
 
-# homelab: split-horizon lab config + localhost routes, no cmdbee leakage
+# The realm-import redirectUris list carries BOTH hostnames in BOTH renders
+# by design (it's static, not env-branched), so we assert on the env-branched
+# oauth2-proxy FLAGS, never on the redirectUris.
+#
+# homelab: split-horizon lab config + localhost routes; the gke-only secure
+# flags must be absent.
 check homelab "$tmp_home" yes "sso-demo.localhost"
 check homelab "$tmp_home" yes "keycloak.localhost"
 check homelab "$tmp_home" yes "insecure-oidc-skip-issuer-verification"
 check homelab "$tmp_home" yes "cookie-secure=false"
 check homelab "$tmp_home" yes "sectionName: web"
-check homelab "$tmp_home" no  "sso-demo.cmdbee.org/oauth2/callback\"$" # redirectUris list still carries both; the flag must not
 check homelab "$tmp_home" no  "redirect-url=https://sso-demo.cmdbee.org"
+check homelab "$tmp_home" no  "cookie-secure=true"
 
-# gke: clean discovery, secure cookies, websecure, no lab compromises
+# gke: clean discovery, secure cookies, websecure; no lab compromises and no
+# homelab-only keycloak.localhost route/hostname leak.
 check gke "$tmp_gke" yes "oidc-issuer-url=https://keycloak.cmdbee.org/realms/demo"
 check gke "$tmp_gke" yes "redirect-url=https://sso-demo.cmdbee.org/oauth2/callback"
 check gke "$tmp_gke" yes "cookie-secure=true"
 check gke "$tmp_gke" yes "sectionName: websecure"
 check gke "$tmp_gke" no  "insecure-oidc-skip-issuer-verification"
 check gke "$tmp_gke" no  "skip-oidc-discovery"
-check gke "$tmp_gke" no  "keycloak-localhost"
+check gke "$tmp_gke" no  "keycloak.localhost"
 
-# both: placeholders must survive go-templating as literals
+# both placeholders must survive go-templating as literals in BOTH renders
 check homelab "$tmp_home" yes '${SSO_DEMO_CLIENT_SECRET}'
+check homelab "$tmp_home" yes '${SSO_DEMO_USER_PASSWORD}'
+check gke     "$tmp_gke"  yes '${SSO_DEMO_CLIENT_SECRET}'
 check gke     "$tmp_gke"  yes '${SSO_DEMO_USER_PASSWORD}'
 
 if [[ "$fail" == "0" ]]; then

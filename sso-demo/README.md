@@ -21,6 +21,7 @@ kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secr
 Retrieve the demo password from OpenBao (custody UX is part of the demo):
 
 ```bash
+ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
 kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv get -field=demo-user-password secret/sso-demo
 ```
 
@@ -44,3 +45,10 @@ On homelab the browser and the cluster see Keycloak through different addresses,
 ## Retiring the demo
 
 Remove `sso-demo-app.yaml` from `apps/kustomization.yaml` (prune deletes the claim and everything it composed), then `bao kv metadata delete secret/sso-demo` if you want the values gone too.
+
+Note: the two ExternalSecrets use `deletionPolicy: Retain`, so the **materialized** Kubernetes Secrets (`sso-demo-realm-secrets` in `keycloak`, `sso-demo-oauth2-proxy` in `sso-demo`) survive the prune. Delete them by hand if you want a fully clean teardown:
+
+```bash
+kubectl delete secret sso-demo-realm-secrets -n keycloak --ignore-not-found
+kubectl delete secret sso-demo-oauth2-proxy -n sso-demo --ignore-not-found
+```

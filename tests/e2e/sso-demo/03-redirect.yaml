@@ -7,6 +7,7 @@ commands:
       # the demo realm's authorization endpoint. Together with 02-token
       # this covers both halves of the handshake browserlessly.
       kubectl delete pod sso-redirect-probe -n $NAMESPACE --ignore-not-found
+      kubectl wait --for=delete pod/sso-redirect-probe -n $NAMESPACE --timeout=60s 2>/dev/null || true
       kubectl run sso-redirect-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE -- \
         sh -c 'for i in $(seq 1 12); do
           LOC=$(curl -s -o /dev/null -w "%{redirect_url}" http://oauth2-proxy.sso-demo.svc:4180/oauth2/start)

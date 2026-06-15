@@ -13,6 +13,7 @@ commands:
       CLIENT_SECRET=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.client-secret}' | base64 -d)
       USER_PASSWORD=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.demo-user-password}' | base64 -d)
       kubectl delete pod sso-token-probe -n $NAMESPACE --ignore-not-found
+      kubectl wait --for=delete pod/sso-token-probe -n $NAMESPACE --timeout=60s 2>/dev/null || true
       kubectl run sso-token-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE \
         --env="CLIENT_SECRET=$CLIENT_SECRET" --env="USER_PASSWORD=$USER_PASSWORD" -- \
         sh -c 'for i in $(seq 1 24); do
