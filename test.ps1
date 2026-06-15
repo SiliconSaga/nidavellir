@@ -14,8 +14,12 @@ $ErrorActionPreference = "Stop"
 # interpolation below (also makes the value injection-safe -- though the
 # only "attacker" here is the developer running their own wrapper).
 $Config = ($Config -replace '\\', '/') -replace '^\./', ''
-if ($Config -notmatch '^[A-Za-z0-9._/-]+$') {
-    throw "-Config must be a plain repo-relative file name (got: $Config)"
+# Require a plain repo-root file name: no path separators, no .. traversal.
+# The config is staged flat into /tmp/work in the container (see below), so a
+# value with a directory component would miss the staged copy, and .. would
+# escape the intended "repo-relative" contract.
+if ($Config -match '/' -or $Config -match '\.\.' -or $Config -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "-Config must be a plain repo-root file name, no path separators (got: $Config)"
 }
 
 # Pinned by digest: the upstream repo stopped tagging versions at v0.15.0 while

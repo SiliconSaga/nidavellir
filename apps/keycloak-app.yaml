@@ -24,6 +24,8 @@ spec:
     repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
     targetRevision: HEAD
     path: keycloak
+    directory:
+      recurse: false   # explicit (matches the operator app); keycloak/ is flat
   destination:
     server: https://kubernetes.default.svc
     namespace: keycloak

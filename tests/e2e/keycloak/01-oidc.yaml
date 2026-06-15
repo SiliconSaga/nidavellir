@@ -12,8 +12,11 @@ commands:
       # phase poll below would never see it. Create, poll, dump logs on
       # failure, delete explicitly. One-shot pods report status.phase,
       # never a Ready condition (kuttl skill). Pre-clean any leftover
-      # probe from an interrupted prior run so reruns are deterministic.
+      # probe from an interrupted prior run AND wait for it to be gone —
+      # `kubectl delete` returns before the pod is actually removed, so
+      # without the wait a rerun can hit AlreadyExists on a Terminating pod.
       kubectl delete pod kc-oidc-probe -n $NAMESPACE --ignore-not-found
+      kubectl wait --for=delete pod/kc-oidc-probe -n $NAMESPACE --timeout=60s 2>/dev/null || true
       kubectl run kc-oidc-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE -- \
         sh -c 'for i in $(seq 1 30); do
           curl -fsS http://keycloak-service.keycloak.svc:8080/realms/siliconsaga/.well-known/openid-configuration | grep -q authorization_endpoint && exit 0
