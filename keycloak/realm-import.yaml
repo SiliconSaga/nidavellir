@@ -13,6 +13,10 @@ spec:
     enabled: true
     displayName: SiliconSaga
     clients:
+      # Non-functional placeholder proving realm import + OIDC discovery
+      # work; Phase 2 replaces it with the real Backstage confidential
+      # client. An explicit callback path (no wildcard) keeps even this
+      # throwaway from being an open-redirect target.
       - clientId: placeholder
         name: "Placeholder (replaced when Backstage/Ting arrive)"
         enabled: true
@@ -20,4 +24,4 @@ spec:
         publicClient: false
         standardFlowEnabled: true
         redirectUris:
-          - "https://placeholder.cmdbee.org/*"
+          - "https://placeholder.cmdbee.org/oauth2/callback"

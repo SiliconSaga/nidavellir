@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 # Normalize -Config: Windows-style backslashes would reach the Linux
 # container literally and break the copy, and a leading ./ is noise.
 # The charset check then keeps shell metacharacters out of the sh -c
-# interpolation below (also makes the value injection-safe — though the
+# interpolation below (also makes the value injection-safe -- though the
 # only "attacker" here is the developer running their own wrapper).
 $Config = ($Config -replace '\\', '/') -replace '^\./', ''
 if ($Config -notmatch '^[A-Za-z0-9._/-]+$') {
@@ -51,7 +51,7 @@ try {
 
     $RepoRoot = Get-Location
     # The auto-detect dir must match the suite the chosen config runs:
-    # kuttl-test.yaml → tests\platform, kuttl-test-e2e.yaml → tests\e2e.
+    # kuttl-test.yaml -> tests\platform, kuttl-test-e2e.yaml -> tests\e2e.
     $TestDir = if ($Config -match 'e2e') { Join-Path $RepoRoot "tests\e2e" } else { Join-Path $RepoRoot "tests\platform" }
 
     # Smart argument handling
@@ -63,7 +63,7 @@ try {
             # trip into the Linux container regardless of how they were typed.
             $arg = $arg -replace '\\', '/'
 
-            # If previous arg was --test, this is already its value — pass through as-is
+            # If previous arg was --test, this is already its value -- pass through as-is
             if ($PrevArg -eq "--test") {
                 $DockerArgs += $arg
                 $PrevArg = $arg
@@ -98,7 +98,7 @@ try {
         -c "mkdir -p /tmp/work && cp /workspace/$Config /tmp/work/ && ln -s /workspace/tests /tmp/work/tests && ln -s /usr/bin/kubectl /tmp/work/kubectl && cd /tmp/work && kubectl-kuttl test --config $Config $DockerArgs"
 }
 finally {
-    # The temp kubeconfig carries cluster credentials — always clean it up,
+    # The temp kubeconfig carries cluster credentials -- always clean it up,
     # even when kubectl or docker fail above.
     Remove-Item -Path $TempKubeConfig -ErrorAction SilentlyContinue
 }
