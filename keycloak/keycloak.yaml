@@ -7,11 +7,10 @@
 # claim generates (keys `user` + `password` — Crunchy-style secret).
 # TLS terminates at the shared traefik-gateway; Keycloak serves plain
 # HTTP in-cluster (httpEnabled) and trusts X-Forwarded-* headers from
-# the gateway (proxy.headers). The hostname is fixed to cmdbee.org on
-# both environments so the wildcard cert applies — on homelab, where
-# the wildcard cert is currently unissued (DNS01 needs Workload
-# Identity), in-cluster access still works and the kuttl smoke probes
-# the service directly.
+# the gateway (proxy.headers). Hostname is dynamic (see below): the
+# external URL is https://keycloak.cmdbee.org on GKE (wildcard TLS) and
+# http://keycloak.localhost on homelab (web listener — route rendered
+# by the sso-demo composition).
 apiVersion: k8s.keycloak.org/v2beta1
 kind: Keycloak
 metadata:
@@ -30,8 +29,13 @@ spec:
     passwordSecret:
       name: keycloak-postgres-user-secret
       key: password
+  # Hostname-v2 dynamic mode: the issuer follows the request host —
+  # https://keycloak.cmdbee.org via the GKE gateway, http://keycloak.localhost
+  # via the homelab web listener (the SSO demo's browser path). A pinned
+  # hostname would make the issuer unreachable from a homelab browser.
+  # Re-pinning per-env is a hardening-phase item alongside TLS.
   hostname:
-    hostname: keycloak.cmdbee.org
+    strict: false
   http:
     httpEnabled: true
   proxy:

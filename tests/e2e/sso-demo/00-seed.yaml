@@ -1,0 +1,26 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      set -e
+      # Seed secret/sso-demo in OpenBao ONLY if absent — a human's
+      # manually seeded values are never clobbered (README documents the
+      # manual path). Root token from the parked init Secret, same
+      # pattern as tests/platform/external-secrets.
+      ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "openbao-init Secret missing - run the OpenBao init flow first" >&2
+        exit 1
+      fi
+      if kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv get secret/sso-demo >/dev/null 2>&1; then
+        echo "secret/sso-demo already seeded - leaving as-is"
+        exit 0
+      fi
+      # client-secret / demo-user-password are free-form; cookie-secret must
+      # match the README's documented contract: base64 of 32 random bytes (a
+      # bare 32-char alnum string is itself valid base64 and oauth2-proxy would
+      # decode it to a 24-byte secret, so seed the encoded form to avoid drift).
+      rand() { tr -dc A-Za-z0-9 </dev/urandom | head -c 32; }
+      cookie="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+      kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secret/sso-demo \
+        client-secret="$(rand)" cookie-secret="$cookie" demo-user-password="$(rand)"

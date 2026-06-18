@@ -1,0 +1,32 @@
+# Post-seed convergence: ESO materializes both fan-out Secrets and the
+# demo workloads come up. Explicit namespaces — these are the standing
+# demo's resources, not kuttl-namespace fixtures.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sso-demo-realm-secrets
+  namespace: keycloak
+type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sso-demo-oauth2-proxy
+  namespace: sso-demo
+type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: sso-demo
+status:
+  availableReplicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: sso-demo
+status:
+  availableReplicas: 1
