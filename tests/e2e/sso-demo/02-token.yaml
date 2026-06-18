@@ -12,6 +12,10 @@ commands:
       # the budget.
       CLIENT_SECRET=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.client-secret}' | base64 -d)
       USER_PASSWORD=$(kubectl get secret sso-demo-realm-secrets -n keycloak -o jsonpath='{.data.demo-user-password}' | base64 -d)
+      if [ -z "$CLIENT_SECRET" ] || [ -z "$USER_PASSWORD" ]; then
+        echo "sso-demo-realm-secrets is missing client-secret or demo-user-password (ESO not synced?)" >&2
+        exit 1
+      fi
       kubectl delete pod sso-token-probe -n $NAMESPACE --ignore-not-found
       kubectl wait --for=delete pod/sso-token-probe -n $NAMESPACE --timeout=60s 2>/dev/null || true
       kubectl run sso-token-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE \

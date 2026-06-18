@@ -15,7 +15,7 @@ render() {
 
 fail=0
 check() { # $1=label $2=haystack-file $3=want(yes|no) $4=needle
-    if grep -q -- "$4" "$2"; then found=yes; else found=no; fi
+    if grep -Fq -- "$4" "$2"; then found=yes; else found=no; fi   # -F: literal, so dots in hostnames aren't regex
     if [[ "$found" != "$3" ]]; then
         echo "FAIL [$1]: expected $4 present=$3, got present=$found" >&2
         fail=1
