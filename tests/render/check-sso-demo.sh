@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Offline render check for the SSO demo composition: renders both
-# environment branches with the crossplane CLI (Docker required; install
-# from https://docs.crossplane.io/latest/cli/) and asserts the env seams landed on the
-# right side. Run from the nidavellir repo root:
+# environment branches with the crossplane CLI and asserts the env seams
+# landed on the right side. Requires Docker and the crossplane CLI, which
+# installs from https://docs.crossplane.io/latest/cli/
+# Run from the nidavellir repo root:
 #   bash tests/render/check-sso-demo.sh
 set -euo pipefail
 
