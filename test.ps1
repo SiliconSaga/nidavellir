@@ -1,10 +1,26 @@
 # test.ps1
 # Runs Kuttl tests using Docker on Windows against a local cluster (Rancher Desktop/k3d).
-# Adapted from mimir/test.ps1; runs the platform suite (kuttl-test.yaml).
-# The domain-dependent e2e suite (kuttl-test-e2e.yaml) still runs per its own
-# header comment: WHOAMI_DOMAIN=... kubectl kuttl test --config kuttl-test-e2e.yaml
+# Adapted from mimir/test.ps1; runs the platform suite (kuttl-test.yaml) by default.
+# -Config selects another suite, typically with a --test filter to skip the
+# domain-dependent whoami case:
+#   ./test.ps1 -Config kuttl-test-e2e.yaml --test keycloak
+param([string]$Config = "kuttl-test.yaml")
 
 $ErrorActionPreference = "Stop"
+
+# Normalize -Config: Windows-style backslashes would reach the Linux
+# container literally and break the copy, and a leading ./ is noise.
+# The charset check then keeps shell metacharacters out of the sh -c
+# interpolation below (also makes the value injection-safe -- though the
+# only "attacker" here is the developer running their own wrapper).
+$Config = ($Config -replace '\\', '/') -replace '^\./', ''
+# Require a plain repo-root file name: no path separators, no .. traversal.
+# The config is staged flat into /tmp/work in the container (see below), so a
+# value with a directory component would miss the staged copy, and .. would
+# escape the intended "repo-relative" contract.
+if ($Config -match '/' -or $Config -match '\.\.' -or $Config -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "-Config must be a plain repo-root file name, no path separators (got: $Config)"
+}
 
 # Pinned by digest: the upstream repo stopped tagging versions at v0.15.0 while
 # `latest` carries the modern kuttl (v0.24-era assertion semantics this suite
@@ -38,7 +54,9 @@ try {
     Write-Host "Running Kuttl via Docker..." -ForegroundColor Cyan
 
     $RepoRoot = Get-Location
-    $TestDir = Join-Path $RepoRoot "tests\platform"
+    # The auto-detect dir must match the suite the chosen config runs:
+    # kuttl-test.yaml -> tests\platform, kuttl-test-e2e.yaml -> tests\e2e.
+    $TestDir = if ($Config -match 'e2e') { Join-Path $RepoRoot "tests\e2e" } else { Join-Path $RepoRoot "tests\platform" }
 
     # Smart argument handling
     $DockerArgs = @()
@@ -49,7 +67,7 @@ try {
             # trip into the Linux container regardless of how they were typed.
             $arg = $arg -replace '\\', '/'
 
-            # If previous arg was --test, this is already its value — pass through as-is
+            # If previous arg was --test, this is already its value -- pass through as-is
             if ($PrevArg -eq "--test") {
                 $DockerArgs += $arg
                 $PrevArg = $arg
@@ -81,10 +99,10 @@ try {
         --add-host host.docker.internal:host-gateway `
         --entrypoint /bin/sh `
         $KuttlImage `
-        -c "mkdir -p /tmp/work && cp /workspace/kuttl-test.yaml /tmp/work/ && ln -s /workspace/tests /tmp/work/tests && ln -s /usr/bin/kubectl /tmp/work/kubectl && cd /tmp/work && kubectl-kuttl test --config kuttl-test.yaml $DockerArgs"
+        -c "mkdir -p /tmp/work && cp /workspace/$Config /tmp/work/ && ln -s /workspace/tests /tmp/work/tests && ln -s /usr/bin/kubectl /tmp/work/kubectl && cd /tmp/work && kubectl-kuttl test --config $Config $DockerArgs"
 }
 finally {
-    # The temp kubeconfig carries cluster credentials — always clean it up,
+    # The temp kubeconfig carries cluster credentials -- always clean it up,
     # even when kubectl or docker fail above.
     Remove-Item -Path $TempKubeConfig -ErrorAction SilentlyContinue
 }

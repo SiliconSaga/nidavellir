@@ -1,0 +1,35 @@
+# Ingress for Keycloak over the shared platform gateway. TLS comes from
+# the *.cmdbee.org wildcard cert on the websecure listener (vegvisir) —
+# live on GKE; on homelab the wildcard is currently unissued (DNS01
+# solver needs Workload Identity), so external TLS access is GKE-only
+# until that drift is fixed. In-cluster consumers and the kuttl smoke
+# use the service directly.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  # group/kind/weight are API defaults, spelled out because Gateway API
+  # admission defaulting writes them into the live object and ArgoCD then
+  # reports perpetual OutOfSync — same webhook-drift pattern as the demo
+  # ExternalSecret and nordri's Gateway/cert-manager cases.
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      name: traefik-gateway
+      namespace: kube-system
+      kind: Gateway
+      sectionName: websecure
+  hostnames:
+    - "keycloak.cmdbee.org"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: keycloak-service
+          port: 8080
+          weight: 1

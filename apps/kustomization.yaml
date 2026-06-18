@@ -16,6 +16,7 @@ resources:
   - ntfy-app.yaml
   - external-secrets-app.yaml
   - openbao-app.yaml
-  # keycloak-app.yaml    # TODO: add when Keycloak is deployed
+  - keycloak-operator-app.yaml
+  - keycloak-app.yaml
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir

@@ -1,0 +1,13 @@
+# Keycloak server up: the operator manages a StatefulSet named after the
+# CR. Asserting readyReplicas avoids the kuttl exact-length trap on the
+# CR's status.conditions (the operator's condition set varies by version);
+# the 01-oidc step proves actual function — discovery doc served for the
+# imported realm. Lives under tests/e2e (300s budget): Keycloak bring-up
+# legitimately takes minutes when the DB is still provisioning.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: keycloak
+status:
+  readyReplicas: 1
