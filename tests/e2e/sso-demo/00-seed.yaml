@@ -16,7 +16,11 @@ commands:
         echo "secret/sso-demo already seeded - leaving as-is"
         exit 0
       fi
-      # 32 ASCII chars = a valid 32-byte oauth2-proxy cookie secret too.
+      # client-secret / demo-user-password are free-form; cookie-secret must
+      # match the README's documented contract: base64 of 32 random bytes (a
+      # bare 32-char alnum string is itself valid base64 and oauth2-proxy would
+      # decode it to a 24-byte secret, so seed the encoded form to avoid drift).
       rand() { tr -dc A-Za-z0-9 </dev/urandom | head -c 32; }
+      cookie="$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
       kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secret/sso-demo \
-        client-secret="$(rand)" cookie-secret="$(rand)" demo-user-password="$(rand)"
+        client-secret="$(rand)" cookie-secret="$cookie" demo-user-password="$(rand)"

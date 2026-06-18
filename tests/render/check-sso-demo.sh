@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Offline render check for the SSO demo composition: renders both
 # environment branches with the crossplane CLI (Docker required; install
-# per realm docs/dev-setup.md) and asserts the env seams landed on the
+# from https://docs.crossplane.io/latest/cli/) and asserts the env seams landed on the
 # right side. Run from the nidavellir repo root:
 #   bash tests/render/check-sso-demo.sh
 set -euo pipefail
 
-command -v crossplane >/dev/null || { echo "crossplane CLI not on PATH — see realm docs/dev-setup.md" >&2; exit 1; }
+command -v crossplane >/dev/null || { echo "crossplane CLI not on PATH — install from https://docs.crossplane.io/latest/cli/" >&2; exit 1; }
 
 render() {
     crossplane render tests/render/sso-demo-xr.yaml sso-demo/composition.yaml \
@@ -22,7 +22,7 @@ check() { # $1=label $2=haystack-file $3=want(yes|no) $4=needle
     fi
 }
 
-tmp_home=$(mktemp) tmp_gke=$(mktemp)
+tmp_home=$(mktemp "${TMPDIR:-/tmp}/sso-demo-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/sso-demo-gke.XXXXXX")
 trap 'rm -f "$tmp_home" "$tmp_gke"' EXIT
 render homelab > "$tmp_home"
 render gke     > "$tmp_gke"
