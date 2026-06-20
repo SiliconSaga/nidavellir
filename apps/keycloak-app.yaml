@@ -1,4 +1,4 @@
-# ArgoCD Application for the Keycloak instance (Leiðangr Phase 1b).
+# ArgoCD Application for the Keycloak instance.
 #
 # Syncs keycloak/ — the Mimir Postgres claim, the Keycloak CR, the
 # siliconsaga realm import, and the HTTPRoute. Sync-wave 12: after the
@@ -8,7 +8,7 @@
 #
 # Expected bring-up order: Postgres claim goes Ready first; the Keycloak
 # pod crash-loops until its DB is reachable — that's provisioning, not
-# failure. Runbook context: realm-siliconsaga Phase 1b plan, Task B3.1.
+# failure.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
