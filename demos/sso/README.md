@@ -1,8 +1,19 @@
 # SSO Demo — OpenBao + ESO + Keycloak, end to end
 
-One `SSODemo` claim that proves the Leiðangr Phase 1 substrate in a single observable act: secrets born in **OpenBao**, delivered by **ESO**, consumed simultaneously by **Keycloak** (the `demo` realm's client secret and demo-user password arrive via realm-import placeholders) and by a real OIDC app (**oauth2-proxy** fronting **whoami**). If you can log in, the whole chain works.
+One `SSODemo` claim that exercises the full secrets-to-SSO substrate in a single observable act: secrets born in **OpenBao**, delivered by **ESO**, consumed simultaneously by **Keycloak** (the `demo` realm's client secret and demo-user password arrive via realm-import placeholders) and by a real OIDC app (**oauth2-proxy** fronting **whoami**). If you can log in, the whole chain works.
 
 Design + decision trail: realm-siliconsaga `docs/plans/2026-06-11-sso-demo-design.md`.
+
+## Prerequisites
+
+- **OpenBao is unsealed.** A restarted `openbao-0` comes back sealed; unseal it first (`docs/secrets-management.md` → "The pod restarted and shows 0/1"). While sealed, ESO cannot read and the demo Secrets never materialize.
+- **The app is synced.** On homelab (staging from the in-cluster seed-Gitea), re-hydrate from your working tree and hard-refresh if the demo is not present yet — from the nordri repo run `GITEA_HOST=gitea.localhost ./update-embedded-git.sh homelab`, then:
+
+```bash
+kubectl annotate application sso-demo -n argo argocd.argoproj.io/refresh=hard --overwrite
+kubectl get pods -n keycloak    # keycloak + the realm-import job
+kubectl get pods -n sso-demo    # oauth2-proxy + whoami Running
+```
 
 ## Seed it (once per cluster)
 

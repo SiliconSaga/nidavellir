@@ -1,11 +1,11 @@
-# ArgoCD Application for the SSO demo (Leiðangr Phase 1 capstone).
+# ArgoCD Application for the SSO demo.
 #
 # One SSODemo claim that exercises the whole substrate at once:
 # cluster-identity, a composition, OpenBao, ESO, Keycloak, and Gateway
 # API. oauth2-proxy + whoami do real OIDC against the disposable `demo`
 # realm; the client secret and demo-user password are born in OpenBao
 # and reach both sides of the handshake via ESO. Walkthrough + seeding:
-# sso-demo/README.md. Retire the demo by removing this app from
+# demos/sso/README.md. Retire the demo by removing this app from
 # apps/kustomization.yaml.
 #
 # Sync-wave 14: after keycloak (12). Expected resting state before
@@ -25,9 +25,9 @@ spec:
   source:
     repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
     targetRevision: HEAD
-    path: sso-demo
+    path: demos/sso
     directory:
-      recurse: false   # explicit (matches the operator app); sso-demo/ is flat
+      recurse: false   # explicit (matches the operator app); demos/sso/ is flat
   destination:
     server: https://kubernetes.default.svc
     namespace: sso-demo

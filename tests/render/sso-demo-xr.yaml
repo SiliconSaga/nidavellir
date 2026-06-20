@@ -1,6 +1,6 @@
 # Offline-render fixture for the SSO demo composition.
 # Usage (from the nidavellir repo root, crossplane CLI + Docker required):
-#   crossplane render tests/render/sso-demo-xr.yaml sso-demo/composition.yaml \
+#   crossplane render tests/render/sso-demo-xr.yaml demos/sso/composition.yaml \
 #     tests/render/functions.yaml --extra-resources tests/render/cluster-identity-homelab.yaml
 # Swap in cluster-identity-gke.yaml to verify the GKE branch (clean OIDC
 # discovery, websecure route, no keycloak.localhost route).
