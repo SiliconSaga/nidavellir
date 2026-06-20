@@ -65,7 +65,12 @@ The suite asserts on the **standing** demo (it does not deploy the demo itself),
 
 ## Retiring the demo
 
-`kubectl delete -f demos/sso/` removes the claim and everything it composed. Then `bao kv metadata delete secret/sso-demo` if you want the values gone too.
+`kubectl delete -f demos/sso/` removes the claim and everything it composed. Then, if you want the seeded values gone too:
+
+```bash
+ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
+kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv metadata delete secret/sso-demo
+```
 
 Note: the two ExternalSecrets use `deletionPolicy: Retain`, so the **materialized** Kubernetes Secrets (`sso-demo-realm-secrets` in `keycloak`, `sso-demo-oauth2-proxy` in `sso-demo`) survive the prune. Delete them by hand if you want a fully clean teardown:
 

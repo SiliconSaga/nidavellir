@@ -27,9 +27,7 @@ that:
 
 ### Deploying it (ad hoc — not auto-deployed)
 
-This demo is **not** in the app-of-apps index (`apps/kustomization.yaml`), so it
-does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you
-want it, then delete them when done:
+This demo is **not** in the app-of-apps index (`apps/kustomization.yaml`), so it does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you want it, then delete them when done:
 
 ```bash
 kubectl apply -f demos/cluster-identity/    # xrd + composition + claim
@@ -37,12 +35,7 @@ kubectl apply -f demos/cluster-identity/    # xrd + composition + claim
 kubectl delete -f demos/cluster-identity/
 ```
 
-Apply the **manifests**, not `apps/cluster-identity-demo-app.yaml`: the
-app-of-apps prunes+selfHeals, so a manually applied Application that isn't in the
-index would be pruned again on the next sync. (The app file is kept only so the
-demo *could* be re-added to the index if it ever needs to stand permanently.) If
-Crossplane reports the claim before the `XClusterIdentityDemo` XRD has
-established, re-run the apply once.
+Apply the **manifests**, not `apps/cluster-identity-demo-app.yaml`: the app-of-apps prunes+selfHeals, so a manually applied Application that isn't in the index would be pruned again on the next sync. (The app file is kept only so the demo *could* be re-added to the index if it ever needs to stand permanently.) If Crossplane reports the claim before the `XClusterIdentityDemo` XRD has established, re-run the apply once.
 
 ## Validating
 
