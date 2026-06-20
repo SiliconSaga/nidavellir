@@ -25,13 +25,28 @@ that:
 | `composition.yaml` | Pipeline: `load-cluster-identity` → render `Deployment` + `Service` → render `HTTPRoute` → `auto-ready`. |
 | `claim.yaml` | Sample `ClusterIdentityDemo` claim with `subdomain: ci-demo`. |
 
-Deployed via the `cluster-identity-demo` ArgoCD Application (see
-`apps/cluster-identity-demo-app.yaml`), which points at this directory in the
-nidavellir repo.
+### Deploying it (ad hoc — not auto-deployed)
+
+This demo is **not** in the app-of-apps index (`apps/kustomization.yaml`), so it
+does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you
+want it, then delete them when done:
+
+```bash
+kubectl apply -f demos/cluster-identity/    # xrd + composition + claim
+# ... validate (below) ...
+kubectl delete -f demos/cluster-identity/
+```
+
+Apply the **manifests**, not `apps/cluster-identity-demo-app.yaml`: the
+app-of-apps prunes+selfHeals, so a manually applied Application that isn't in the
+index would be pruned again on the next sync. (The app file is kept only so the
+demo *could* be re-added to the index if it ever needs to stand permanently.) If
+Crossplane reports the claim before the `XClusterIdentityDemo` XRD has
+established, re-run the apply once.
 
 ## Validating
 
-After ArgoCD syncs:
+After the claim reconciles:
 
 ```bash
 # Claim should reach Ready=True / Synced=True
