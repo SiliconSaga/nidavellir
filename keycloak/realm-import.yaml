@@ -1,6 +1,6 @@
 # Bootstrap realm: proves CR-driven realm import + OIDC discovery work.
 # The placeholder client gets replaced by the real Backstage confidential
-# client in Leiðangr Phase 2 (and Ting later).
+# client later (and Ting later still).
 apiVersion: k8s.keycloak.org/v2beta1
 kind: KeycloakRealmImport
 metadata:
@@ -14,9 +14,9 @@ spec:
     displayName: SiliconSaga
     clients:
       # Non-functional placeholder proving realm import + OIDC discovery
-      # work; Phase 2 replaces it with the real Backstage confidential
-      # client. An explicit callback path (no wildcard) keeps even this
-      # throwaway from being an open-redirect target.
+      # work; replaced later by the real Backstage confidential client. An
+      # explicit callback path (no wildcard) keeps even this throwaway from
+      # being an open-redirect target.
       - clientId: placeholder
         name: "Placeholder (replaced when Backstage/Ting arrive)"
         enabled: true

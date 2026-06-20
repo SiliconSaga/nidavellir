@@ -1,8 +1,25 @@
 # SSO Demo — OpenBao + ESO + Keycloak, end to end
 
-One `SSODemo` claim that proves the Leiðangr Phase 1 substrate in a single observable act: secrets born in **OpenBao**, delivered by **ESO**, consumed simultaneously by **Keycloak** (the `demo` realm's client secret and demo-user password arrive via realm-import placeholders) and by a real OIDC app (**oauth2-proxy** fronting **whoami**). If you can log in, the whole chain works.
+One `SSODemo` claim that exercises the full secrets-to-SSO substrate in a single observable act: secrets born in **OpenBao**, delivered by **ESO**, consumed simultaneously by **Keycloak** (the `demo` realm's client secret and demo-user password arrive via realm-import placeholders) and by a real OIDC app (**oauth2-proxy** fronting **whoami**). If you can log in, the whole chain works.
 
 Design + decision trail: realm-siliconsaga `docs/plans/2026-06-11-sso-demo-design.md`.
+
+## Prerequisites
+
+- **The platform substrate is up.** This demo consumes standing platform services — OpenBao, ESO, the Keycloak operator + instance — which *are* auto-deployed. They must be healthy before the demo can converge.
+- **OpenBao is unsealed.** A restarted `openbao-0` comes back sealed; unseal it first (`docs/secrets-management.md` → "The pod restarted and shows 0/1"). While sealed, ESO cannot read and the demo Secrets never materialize.
+
+## Deploying it (ad hoc — not auto-deployed)
+
+This demo is **not** a stack member — it ships no ArgoCD Application and does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you want it:
+
+```bash
+kubectl apply -f demos/sso/    # xrd + composition + claim
+# If Crossplane reports the claim before the XSSODemo XRD has established, re-run once.
+kubectl get pods -n sso-demo   # oauth2-proxy + whoami come up once secrets converge
+```
+
+Retire it with `kubectl delete -f demos/sso/` (and see "Retiring the demo" below for the Retain'd Secrets). To make it a permanent stack member instead, author an Application under `apps/` and list it in `apps/kustomization.yaml`.
 
 ## Seed it (once per cluster)
 
@@ -42,9 +59,16 @@ On homelab the browser and the cluster see Keycloak through different addresses,
 
 `tests/e2e/sso-demo/` (run via `./test.ps1 -Config kuttl-test-e2e.yaml --test sso-demo` on Windows): seeds OpenBao if empty, asserts the Secrets materialize in both namespaces, requests a real password-grant token from the `demo` realm using the OpenBao-derived client secret, and asserts oauth2-proxy's `/oauth2/start` redirects into the demo realm's auth endpoint. Browserless, runs identically on both environments.
 
+The suite asserts on the **standing** demo (it does not deploy the demo itself), so **apply `demos/sso/` first** (see "Deploying it" above) and make sure OpenBao is unsealed before running it.
+
 ## Retiring the demo
 
-Remove `sso-demo-app.yaml` from `apps/kustomization.yaml` (prune deletes the claim and everything it composed), then `bao kv metadata delete secret/sso-demo` if you want the values gone too.
+`kubectl delete -f demos/sso/` removes the claim and everything it composed. Then, if you want the seeded values gone too:
+
+```bash
+ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
+kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv metadata delete secret/sso-demo
+```
 
 Note: the two ExternalSecrets use `deletionPolicy: Retain`, so the **materialized** Kubernetes Secrets (`sso-demo-realm-secrets` in `keycloak`, `sso-demo-oauth2-proxy` in `sso-demo`) survive the prune. Delete them by hand if you want a fully clean teardown:
 

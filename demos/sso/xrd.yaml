@@ -19,7 +19,7 @@ spec:
       schema:
         openAPIV3Schema:
           type: object
-          description: "The Phase 1 capstone demo: oauth2-proxy + whoami doing real OIDC against the disposable `demo` Keycloak realm, with the client secret and demo-user password born in OpenBao and delivered by ESO to both sides of the handshake. Env-aware via cluster-identity: cmdbee.org/websecure on gke, *.localhost/web on homelab. Singleton per cluster (fixed names/namespaces); seed secret/sso-demo in OpenBao before expecting convergence — see sso-demo/README.md."
+          description: "Full-stack SSO demo: oauth2-proxy + whoami doing real OIDC against the disposable `demo` Keycloak realm, with the client secret and demo-user password born in OpenBao and delivered by ESO to both sides of the handshake. Env-aware via cluster-identity: cmdbee.org/websecure on gke, *.localhost/web on homelab. Singleton per cluster (fixed names/namespaces); seed secret/sso-demo in OpenBao before expecting convergence — see demos/sso/README.md."
           properties:
             spec:
               type: object

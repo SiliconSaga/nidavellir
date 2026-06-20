@@ -10,7 +10,7 @@ set -euo pipefail
 command -v crossplane >/dev/null || { echo "crossplane CLI not on PATH — install from https://docs.crossplane.io/latest/cli/" >&2; exit 1; }
 
 render() {
-    crossplane render tests/render/sso-demo-xr.yaml sso-demo/composition.yaml \
+    crossplane render tests/render/sso-demo-xr.yaml demos/sso/composition.yaml \
         tests/render/functions.yaml --extra-resources "tests/render/cluster-identity-$1.yaml"
 }
 

@@ -1,4 +1,4 @@
-# ArgoCD Application for the Keycloak Operator (Leiðangr Phase 1b).
+# ArgoCD Application for the Keycloak Operator.
 #
 # Syncs the upstream operator manifests (CRDs + controller) from the
 # SiliconSaga VENDOR MIRROR of keycloak/keycloak-k8s-resources, pinned to

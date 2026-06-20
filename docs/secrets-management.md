@@ -2,7 +2,7 @@
 
 How the platform stores and delivers secrets: what OpenBao is, what "sealed" means (the part that confuses everyone at first), how External Secrets Operator (ESO) turns OpenBao values into ordinary Kubernetes Secrets, and the runbooks for the situations you'll actually hit — a restarted pod, a fresh cluster, a value to add.
 
-Decision records: realm-siliconsaga `docs/adrs/0001`–`0003`. Implementation: this repo's `openbao/` directory + `apps/external-secrets-app.yaml` (Leiðangr Phase 1a, PR #13).
+Decision records: realm-siliconsaga `docs/adrs/0001`–`0003`. Implementation: this repo's `openbao/` directory + `apps/external-secrets-app.yaml` (PR #13). For a full worked example of the chain end to end — an OpenBao-born secret flowing through ESO into a live consumer — see `demos/sso/`.
 
 ## The mental model in one diagram
 
@@ -49,7 +49,7 @@ Practical consequences worth internalizing:
 - **The root token is a login credential, not the encryption key.** Losing unseal shares = data unrecoverable. Losing the root token while unsealed = recoverable (you can generate a new root with the shares).
 - This manual dance can be replaced with **KMS auto-unseal** (cloud key service holds the master key). That's deliberately deferred — see "Custody posture" below.
 
-## What's deployed (the Phase 1a shape)
+## What's deployed (the substrate shape)
 
 OpenBao ships as a Crossplane composition (`openbao/composition.yaml`), same pattern as ntfy/heimdall: `function-environment-configs` loads `cluster-identity`, `function-go-templating` renders a Helm `Release` plus an `HTTPRoute`. Env-awareness comes from cluster-identity: homelab gets `local-path` storage and `openbao.homelab.local`; GKE gets `standard-rwo` and `openbao.cmdbee.org`.
 
@@ -63,7 +63,7 @@ Shape choices that matter when you're debugging:
 
 ## Custody posture: test vs live
 
-Phase 1a runs the **minimal unseal posture** (ADR 0002). The init output — unseal shares and root token — is parked in-cluster in the `openbao-init` Secret (ns `openbao`), with the root token duplicated as its own `root_token` key so tests can read it without JSON parsing. Anyone with cluster admin can read that Secret. That is an accepted tradeoff, not an oversight:
+This substrate runs the **minimal unseal posture** (ADR 0002). The init output — unseal shares and root token — is parked in-cluster in the `openbao-init` Secret (ns `openbao`), with the root token duplicated as its own `root_token` key so tests can read it without JSON parsing. Anyone with cluster admin can read that Secret. That is an accepted tradeoff, not an oversight:
 
 - **homelab (staging, resettable):** in-cluster custody only. If everything is lost, wipe and re-init — nothing of value is at stake.
 - **GKE (live):** the same Secret exists for operational convenience, but the unseal shares and root token ALSO go into the operator's password manager at init time, BEFORE the in-cluster copy is created. If the cluster eats the Secret, you can still unseal.
@@ -149,7 +149,7 @@ kubectl exec -n openbao openbao-0 -- bao operator init -key-shares=3 -key-thresh
 kubectl create secret generic openbao-init -n openbao --from-file=init.json=<saved-json> --from-literal=root_token=<token>
 ```
 
-Then the one-time mount/auth/policy setup (KV v2 at `secret/`, Kubernetes auth, `eso-read` policy + `eso-role`): the exact command sequence lives in the Phase 1a plan, realm-siliconsaga `docs/plans/2026-06-09-leidangr-phase1a-openbao-eso-plan.md`, Task A1.5 Step 3. Seed `secret/demo` with `foo=bar` so the kuttl smoke and the demo ExternalSecret go green.
+Then the one-time mount/auth/policy setup (KV v2 at `secret/`, Kubernetes auth, `eso-read` policy + `eso-role`): the exact command sequence lives in the OpenBao/ESO setup plan, realm-siliconsaga `docs/plans/2026-06-09-leidangr-phase1a-openbao-eso-plan.md`, Task A1.5 Step 3. Seed `secret/demo` with `foo=bar` so the kuttl smoke and the demo ExternalSecret go green.
 
 Windows/Git Bash note: prefix `kubectl exec`/`kubectl cp` commands that carry absolute in-container paths with `MSYS_NO_PATHCONV=1`, or MSYS rewrites them to Windows paths (see realm dev-setup → MSYS Path Mangling).
 
@@ -167,5 +167,5 @@ Staging: accept the loss — delete the openbao PVC and Helm release pod state, 
 
 - **KMS auto-unseal + HA** — the hardening phase. Until then, restarts need a human.
 - **TLS inside the cluster** — an active risk, not just a missing feature; see "Security limitations" above for the exposure scope. The hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
-- **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak (Phase 1b) consumes static values via ESO first; dynamic DB credentials are a later conversation.
+- **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak consumes static values via ESO first; dynamic DB credentials are a later conversation.
 - **App-side OpenBao SDKs / agent injector** — intentionally avoided (ADR 0003). Consume through ExternalSecrets; if you think you need direct API access from a workload, raise it as a design question first.

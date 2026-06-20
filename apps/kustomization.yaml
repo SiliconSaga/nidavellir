@@ -11,13 +11,15 @@ resources:
   - vegvisir-app.yaml
   - mimir-app.yaml
   - heimdall-app.yaml
-  - cluster-identity-demo-app.yaml
   - tailscale-operator-app.yaml
   - ntfy-app.yaml
   - external-secrets-app.yaml
   - openbao-app.yaml
   - keycloak-operator-app.yaml
   - keycloak-app.yaml
-  - sso-demo-app.yaml
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir
+
+# Demos are NOT stack members — they are ad-hoc, like demos/whoami, and ship no
+# ArgoCD Application. Apply a demo's manifests directly when you want it
+# (e.g. `kubectl apply -f demos/sso`); see each demo's README under demos/.
