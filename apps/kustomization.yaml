@@ -20,9 +20,6 @@ resources:
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir
 
-# Demos are NOT auto-deployed — they are ad-hoc, like demos/whoami. Apply a
-# demo's manifests directly when you want it (e.g. `kubectl apply -f demos/sso`),
-# never the app file: this app-of-apps prunes+selfHeals, so a manually applied
-# Application not listed here would just be pruned again. See each demo's README:
-#   demos/cluster-identity/  (apps/cluster-identity-demo-app.yaml)
-#   demos/sso/               (apps/sso-demo-app.yaml)
+# Demos are NOT stack members — they are ad-hoc, like demos/whoami, and ship no
+# ArgoCD Application. Apply a demo's manifests directly when you want it
+# (e.g. `kubectl apply -f demos/sso`); see each demo's README under demos/.

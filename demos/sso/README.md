@@ -11,7 +11,7 @@ Design + decision trail: realm-siliconsaga `docs/plans/2026-06-11-sso-demo-desig
 
 ## Deploying it (ad hoc — not auto-deployed)
 
-This demo is **not** in the app-of-apps index (`apps/kustomization.yaml`), so it does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you want it:
+This demo is **not** a stack member — it ships no ArgoCD Application and does not auto-deploy. Like `demos/whoami`, apply its manifests directly when you want it:
 
 ```bash
 kubectl apply -f demos/sso/    # xrd + composition + claim
@@ -19,9 +19,7 @@ kubectl apply -f demos/sso/    # xrd + composition + claim
 kubectl get pods -n sso-demo   # oauth2-proxy + whoami come up once secrets converge
 ```
 
-Apply the **manifests**, not `apps/sso-demo-app.yaml`: the app-of-apps prunes+selfHeals, so a manually applied Application not listed in the index would be pruned again on the next sync. (The app file is kept only so the demo *could* be re-added to the index if it ever needs to stand permanently.)
-
-Retire it with `kubectl delete -f demos/sso/` (and see "Retiring the demo" below for the Retain'd Secrets).
+Retire it with `kubectl delete -f demos/sso/` (and see "Retiring the demo" below for the Retain'd Secrets). To make it a permanent stack member instead, author an Application under `apps/` and list it in `apps/kustomization.yaml`.
 
 ## Seed it (once per cluster)
 
