@@ -48,14 +48,14 @@ spec:
     users:
       # Dev user to authenticate as during the OIDC login. Role-only gating in
       # OpenBao means any authenticated realm user gets the leidangr-dev-read
-      # policy; this seeds one so a fresh bootstrap has a working login. Password
-      # delivered from OpenBao via ESO.
-      - username: cervator
+      # policy; this seeds a generic (non-personal) one so a fresh bootstrap has
+      # a working login. Password delivered from OpenBao via ESO.
+      - username: leidangr-dev
         enabled: true
-        email: cervator@gmail.com
+        email: leidangr-dev@example.com
         emailVerified: true
-        firstName: Rasmus
-        lastName: Praestholm
+        firstName: Leidangr
+        lastName: Dev
         credentials:
           - type: password
             value: "${LEIDANGR_OIDC_DEV_USER_PASSWORD}"
