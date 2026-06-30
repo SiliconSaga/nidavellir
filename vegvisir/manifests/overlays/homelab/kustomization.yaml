@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Vegvísir homelab overlay — base only, with the Gateway pinned to the
+# self-signed default cert.
+#
+# Homelab has no public DNS and no Cloud DNS solver, so the LetsEncrypt issuers
+# and the *.cmdbee.org wildcard cert (overlays/gke) can never issue here. Without
+# this overlay the Gateway's websecure listener references `wildcard-cmdbee-tls`,
+# a Secret cert-manager never populates on homelab — so the HTTPS listener stays
+# Programmed=False (InvalidCertificateRef) and every HTTPS HTTPRoute (keycloak,
+# etc.) fails to attach with NoMatchingParent.
+#
+# The patch below repoints the websecure listener at `traefik-gateway-default-cert`
+# — the self-signed Secret base/traefik-default-cert.yaml already creates and which
+# is Ready on homelab — so the listener programs and routes attach. Browsers see a
+# self-signed cert on homelab.local, which is expected for a private cluster.
+#
+# Listener index 1 is `websecure` (index 0 is the plain-HTTP `web` listener); the
+# order is fixed in base/traefik-gateway.yaml.
+resources:
+  - ../../base
+
+patches:
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: Gateway
+      name: traefik-gateway
+    patch: |-
+      - op: replace
+        path: /spec/listeners/1/tls/certificateRefs/0/name
+        value: traefik-gateway-default-cert

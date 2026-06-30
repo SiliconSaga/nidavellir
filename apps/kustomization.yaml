@@ -17,6 +17,8 @@ resources:
   - openbao-app.yaml
   - keycloak-operator-app.yaml
   - keycloak-app.yaml
+  # --- games (Phase 1: Valheim; Phase 2: Ark, Terasology, Rend) ---
+  - kubicvalheim-app.yaml
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir
 

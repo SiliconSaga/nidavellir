@@ -1,0 +1,38 @@
+# ArgoCD Application for KubicValheim (Flavor 3 — GitOps).
+#
+# Syncs the gitops overlay (base + observability + secrets-openbao components)
+# from the in-cluster Gitea mirror of kubicvalheim. ArgoCD auto-detects Kustomize
+# from kustomization.yaml. Sync-wave 15: after the platform (External Secrets,
+# OpenBAO, heimdall) so the ExternalSecret store and ServiceMonitor CRD exist.
+# First member of a future "games" grouping.
+#
+# Note: the Valheim server image is amd64-only, so this app only reaches a Healthy
+# rollout on an amd64 cluster (GKE, or an amd64 homelab). On an arm64 cluster the
+# pod stays ImagePullBackOff ("no match for platform") — the manifests are correct,
+# the architecture isn't.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubicvalheim
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/kubicvalheim.git'
+    targetRevision: HEAD
+    path: kustomize/overlays/gitops
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubicvalheim
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
