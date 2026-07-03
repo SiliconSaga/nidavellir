@@ -5,8 +5,11 @@ commands:
       # In-cluster OIDC discovery probe against the operator-created
       # service — no external DNS/TLS dependency, so it runs on homelab
       # where the wildcard cert is unissued. A 200 with an
-      # authorization_endpoint proves Keycloak is serving AND the
-      # siliconsaga realm import landed.
+      # authorization_endpoint proves the GENERIC platform Keycloak is
+      # serving OIDC discovery. Probes the built-in `master` realm so this
+      # stays realm-agnostic — realm/app-specific realm imports are
+      # realm-injected (nidavellir#20) and must be asserted realm-side, not
+      # here.
       #
       # No --rm: kubectl would delete the pod on command exit and the
       # phase poll below would never see it. Create, poll, dump logs on
@@ -19,7 +22,7 @@ commands:
       kubectl wait --for=delete pod/kc-oidc-probe -n $NAMESPACE --timeout=60s 2>/dev/null || true
       kubectl run kc-oidc-probe --restart=Never --image=curlimages/curl:8.10.1 -n $NAMESPACE -- \
         sh -c 'for i in $(seq 1 30); do
-          curl -fsS http://keycloak-service.keycloak.svc:8080/realms/siliconsaga/.well-known/openid-configuration | grep -q authorization_endpoint && exit 0
+          curl -fsS http://keycloak-service.keycloak.svc:8080/realms/master/.well-known/openid-configuration | grep -q authorization_endpoint && exit 0
           sleep 5
         done; exit 1'
       RESULT=1
