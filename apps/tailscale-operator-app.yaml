@@ -9,6 +9,14 @@
 # `operator-oauth` (with keys `client_id` and `client_secret`) when
 # oauthSecretVolume is unset — no additional Helm values needed.
 #
+# operatorConfig.hostname sets the tailnet device name for this cluster's
+# operator. It MUST be unique per cluster: the chart default `tailscale-operator`
+# means two homelab clusters sharing one nidavellir hydration would collide on a
+# single tailnet device. The placeholder `tailscale-operator-MACHINE` is rewritten
+# to the host machine name by the nordri hydration scripts (each Mac runs exactly
+# one cluster, so the machine name is a stable unique id — e.g. Idunn ->
+# `tailscale-operator-idunn`, Loki -> `tailscale-operator-loki`).
+#
 # Sync-wave 4: before ntfy (wave 6) so the operator is ready to expose its Service.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -25,6 +33,15 @@ spec:
     repoURL: https://pkgs.tailscale.com/helmcharts
     chart: tailscale-operator
     targetRevision: "1.98.3"
+    helm:
+      # String form (not valuesObject) to match the other Helm apps in this repo
+      # and stay compatible with older ArgoCD versions.
+      values: |-
+        operatorConfig:
+          # Rewritten to `tailscale-operator-<machine>` at hydrate time; see
+          # the header note. Left as a literal placeholder so an un-hydrated
+          # direct sync is still a syntactically valid (if non-unique) hostname.
+          hostname: tailscale-operator-MACHINE
   destination:
     server: https://kubernetes.default.svc
     namespace: tailscale

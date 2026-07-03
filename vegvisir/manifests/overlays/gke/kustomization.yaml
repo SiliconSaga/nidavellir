@@ -1,23 +1,20 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Vegvísir resources — deployed on all clusters.
+# Vegvísir GKE overlay — base + the public-CA TLS stack.
 #
-# Sync-wave ordering:
-#   wave 10: cert-manager-app.yaml             — cert-manager Helm app
-#   wave 11: selfsigned-issuer.yaml            — bootstrap SelfSigned ClusterIssuer
-#   wave 12: traefik-default-cert.yaml         — self-signed cert creates the gateway secret
-#   wave 13: traefik-gateway.yaml              — Gateway (secret now exists, listeners valid)
+# Adds the LetsEncrypt issuers and the *.cmdbee.org wildcard Certificate. These
+# need public DNS and a Cloud DNS (DNS-01) solver with Workload Identity, so they
+# only ever land on GKE. The base Gateway already references `wildcard-cmdbee-tls`
+# on its websecure listener; cert-manager populates that Secret here.
+#
+# Sync-wave ordering (continues base):
 #   wave 15: letsencrypt-staging-issuer.yaml   — staging ClusterIssuer (test first)
 #   wave 15: letsencrypt-gateway-issuer.yaml   — production ClusterIssuer (HTTP-01)
 #   wave 15: letsencrypt-dns01.yaml            — production ClusterIssuer (DNS-01, for wildcard)
 #   wave 16: wildcard-cert.yaml                — wildcard *.cmdbee.org cert the Gateway serves
-#
 resources:
-  - cert-manager-app.yaml
-  - selfsigned-issuer.yaml
-  - traefik-default-cert.yaml
-  - traefik-gateway.yaml
+  - ../../base
   - letsencrypt-staging-issuer.yaml
   - letsencrypt-gateway-issuer.yaml
   - letsencrypt-dns01.yaml

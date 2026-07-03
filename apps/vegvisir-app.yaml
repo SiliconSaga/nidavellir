@@ -1,11 +1,21 @@
 # ArgoCD Application for Vegvísir (Nidavellir routing & TLS layer).
 #
-# Deploys the Traefik Gateway resource and letsencrypt-gateway ClusterIssuer
-# from this repo's vegvisir/manifests/ directory. These are the platform routing
-# and TLS primitives that sit on top of Traefik (deployed by Nordri/layer4).
+# Deploys the Traefik Gateway resource and TLS primitives from this repo's
+# vegvisir/manifests/ overlays. These sit on top of Traefik (deployed by
+# Nordri/layer4).
 #
-# cert-manager is NOT deployed here — it is either pre-installed on the cluster
-# (existing GKE) or installed separately via vegvisir/manifests/cert-manager-app.yaml.
+# The `path` below is environment-specific: it points at the homelab overlay by
+# default (this checkout's common case) and the nordri hydration scripts rewrite
+# `overlays/homelab` -> `overlays/$TARGET` at hydrate time (mirrors nordri's
+# app-of-apps overlay patch). The homelab overlay drops the LetsEncrypt issuers +
+# the *.cmdbee.org wildcard cert (which need public DNS) and pins the Gateway's
+# websecure listener to the self-signed default cert so HTTPS routes attach; the
+# gke overlay keeps the full public-CA TLS stack. See vegvisir/manifests/.
+#
+# cert-manager itself is installed by the `cert-manager-app.yaml` Application that
+# this overlay pulls in via base/ — a nested ArgoCD app synced ahead of the Gateway.
+# On a cluster where cert-manager is already present it just reconciles to the same
+# state; this app does not re-implement the cert-manager install itself.
 #
 # Sync-wave 5: so the Traefik GatewayClass has time to register before the
 # Gateway resource is applied. ArgoCD self-heals if Traefik is not yet ready.
@@ -27,7 +37,7 @@ spec:
   source:
     repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
     targetRevision: HEAD
-    path: vegvisir/manifests
+    path: vegvisir/manifests/overlays/homelab
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system
