@@ -28,6 +28,12 @@ patches:
       kind: Gateway
       name: traefik-gateway
     patch: |-
+      # Assert listener[1] really is `websecure` before repointing its cert — a
+      # failed `test` op aborts the kustomize build loudly rather than silently
+      # patching the wrong listener if base/traefik-gateway.yaml's order changes.
+      - op: test
+        path: /spec/listeners/1/name
+        value: websecure
       - op: replace
         path: /spec/listeners/1/tls/certificateRefs/0/name
         value: traefik-gateway-default-cert

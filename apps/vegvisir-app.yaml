@@ -12,8 +12,10 @@
 # websecure listener to the self-signed default cert so HTTPS routes attach; the
 # gke overlay keeps the full public-CA TLS stack. See vegvisir/manifests/.
 #
-# cert-manager is NOT deployed here — it is either pre-installed on the cluster
-# (existing GKE) or installed separately via vegvisir/manifests/cert-manager-app.yaml.
+# cert-manager itself is installed by the `cert-manager-app.yaml` Application that
+# this overlay pulls in via base/ — a nested ArgoCD app synced ahead of the Gateway.
+# On a cluster where cert-manager is already present it just reconciles to the same
+# state; this app does not re-implement the cert-manager install itself.
 #
 # Sync-wave 5: so the Traefik GatewayClass has time to register before the
 # Gateway resource is applied. ArgoCD self-heals if Traefik is not yet ready.

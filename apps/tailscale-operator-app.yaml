@@ -34,7 +34,9 @@ spec:
     chart: tailscale-operator
     targetRevision: "1.98.3"
     helm:
-      valuesObject:
+      # String form (not valuesObject) to match the other Helm apps in this repo
+      # and stay compatible with older ArgoCD versions.
+      values: |-
         operatorConfig:
           # Rewritten to `tailscale-operator-<machine>` at hydrate time; see
           # the header note. Left as a literal placeholder so an un-hydrated
