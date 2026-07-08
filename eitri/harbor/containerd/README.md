@@ -2,7 +2,7 @@
 
 These `hosts.toml` files point a cluster's node containerd at the public Harbor proxy-cache instead of pulling the failing upstreams directly. They are CLIENT config — applied per node, per substrate — separate from Harbor itself. Each installs at `/etc/containerd/certs.d/<upstream>/hosts.toml`.
 
-## Docker Desktop / kind (the immediate #20 unblock)
+## Docker Desktop / kind
 
 The kind nodes are Docker containers (`desktop-control-plane`, `desktop-worker`). For each node and each upstream:
 
@@ -24,7 +24,7 @@ If it's missing, add it and restart containerd in the node. Then force a re-pull
 kubectl delete pod -n crossplane --all
 ```
 
-## k3s (homelab Rancher Desktop / Idunn) — phase 3
+## k3s (homelab Rancher Desktop) — phase 3
 
 k3s reads `/etc/rancher/k3s/registries.yaml` (an ordered `endpoint` list per mirror), not `certs.d`. Translate the same mapping there. Deferred to the phase-3 rollout.
 

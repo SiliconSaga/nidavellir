@@ -39,5 +39,5 @@ echo "$mirrors" | while read -r name type url; do
     -o /dev/null -w "project  $name (public proxy-cache) : %{http_code}\n"
 done
 
-echo "--- verify a real pull-through (the image that failed on Docker Desktop) ---"
+echo "--- verify a real pull-through ---"
 echo "docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4"

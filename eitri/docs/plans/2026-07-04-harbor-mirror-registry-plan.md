@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (this is verification-driven infra ops with human-gated steps, not code TDD). Steps use checkbox (`- [ ]`) syntax. Steps marked **[HUMAN]** are interactive and must be run by the operator (browser auth, DNS, cluster choice); the agent prepares/verifies around them.
 
-**Goal:** Stand up a public-read Harbor pull-through cache on the durable GKE cluster and point Docker Desktop's containerd at it, so a fresh `bootstrap.sh homelab realm-siliconsaga` on Docker Desktop pulls Crossplane through Harbor and completes the nidavellir#20 e2e — no auth.
+**Goal:** Stand up a public-read Harbor pull-through cache on the durable GKE cluster and point a client cluster's containerd at it, so a runtime that can't pull the upstreams directly (e.g. a Docker-Desktop/kind node and `xpkg.crossplane.io`) resolves them through Harbor with no auth.
 
-**Architecture:** Harbor (Helm) on GKE, public-read, exposed at `registry.cmdbee.org`, with proxy-cache projects for each origin. Docker Desktop node containerd gets a `hosts.toml` mirror pointing the failing `xpkg.*` registries at the Harbor proxy-cache. (Per-cluster Harbor + full 3-tier chain everywhere is a separate follow-up plan — phase 3 of the design.)
+**Architecture:** Harbor (Helm) on GKE, public-read, exposed at `harbor.cmdbee.org`, with proxy-cache projects for each origin. Docker Desktop node containerd gets a `hosts.toml` mirror pointing the failing `xpkg.*` registries at the Harbor proxy-cache. (Per-cluster Harbor + full 3-tier chain everywhere is a separate follow-up plan — phase 3 of the design.)
 
 **Tech Stack:** Google Cloud SDK + `gke-gcloud-auth-plugin`, GKE, Harbor Helm chart (`https://helm.goharbor.io`), cert-manager + Cloud DNS (already on the GKE cluster), containerd `hosts.toml`.
 
@@ -57,7 +57,7 @@
 - Create: `components/nidavellir/eitri/harbor/values.yaml` (Harbor Helm values — realm-owned GKE infra config)
 
 **Interfaces:**
-- Produces: a running Harbor in ns `harbor` on the GKE cluster, reachable at `https://registry.cmdbee.org`, admin password in a known secret.
+- Produces: a running Harbor in ns `harbor` on the GKE cluster, reachable at `https://harbor.cmdbee.org`, admin password in a known secret.
 
 - [ ] **Step 1: Add the chart repo.** Run: `helm repo add harbor https://helm.goharbor.io` then `helm repo update` → Expected: `"harbor" has been added`.
 - [ ] **Step 2: Write `cluster-gke/harbor/values.yaml`** — expose via ingress on the GKE ingress class, TLS from cert-manager, public external URL, trimmed footprint (no Trivy/Notary for a proxy-cache):
@@ -72,11 +72,11 @@ expose:
       secretName: harbor-tls
   ingress:
     hosts:
-      core: registry.cmdbee.org
+      core: harbor.cmdbee.org
     className: <GKE_INGRESS_CLASS>   # confirm from the cluster (Task 1.1 Step 3)
     annotations:
       cert-manager.io/cluster-issuer: <EXISTING_CLUSTERISSUER>   # confirm (Task 1.1 Step 3)
-externalURL: https://registry.cmdbee.org
+externalURL: https://harbor.cmdbee.org
 harborAdminPassword: ""          # set via --set on install (Step 4); never commit a real one
 persistence:
   enabled: true
@@ -98,11 +98,11 @@ metrics: { enabled: false }
   → Expected: `STATUS: deployed`.
 - [ ] **Step 5: Verify pods.** Run: `kubectl --context <gke> get pods -n harbor` → Expected: `harbor-core`, `-registry`, `-database`, `-redis`, `-jobservice`, `-portal` all `Running`/`Ready` (may take a few minutes + PVC binds).
 
-### Task 1.2: DNS + TLS for `registry.cmdbee.org`
+### Task 1.2: DNS + TLS for `harbor.cmdbee.org`
 
 - [ ] **Step 1: Get the ingress address.** Run: `kubectl --context <gke> get ingress -n harbor` → note ADDRESS (LB IP or hostname).
-- [ ] **Step 2 [HUMAN]: Point DNS.** Add an `A`/`CNAME` for `registry.cmdbee.org` → that address in Cloud DNS zone `cmdbee-org` (mirror how `*.cmdbee.org` is managed; the existing cert-manager DNS-01 setup covers the cert). Verify: `nslookup registry.cmdbee.org` resolves.
-- [ ] **Step 3: Verify the cert.** Run: `kubectl --context <gke> get certificate -n harbor` → Expected: `harbor-tls` `READY=True` (cert-manager issued). Then `curl -fsS https://registry.cmdbee.org/api/v2.0/health` → Expected: JSON with `"status":"healthy"`.
+- [ ] **Step 2 [HUMAN]: Point DNS.** Add an `A`/`CNAME` for `harbor.cmdbee.org` → that address in Cloud DNS zone `cmdbee-org` (mirror how `*.cmdbee.org` is managed; the existing cert-manager DNS-01 setup covers the cert). Verify: `nslookup harbor.cmdbee.org` resolves.
+- [ ] **Step 3: Verify the cert.** Run: `kubectl --context <gke> get certificate -n harbor` → Expected: `harbor-tls` `READY=True` (cert-manager issued). Then `curl -fsS https://harbor.cmdbee.org/api/v2.0/health` → Expected: JSON with `"status":"healthy"`.
 
 ### Task 1.3: Configure proxy-cache registries + public projects
 
@@ -110,15 +110,15 @@ metrics: { enabled: false }
 - Create: `components/nidavellir/eitri/harbor/setup-proxy-cache.sh` (idempotent Harbor API script)
 
 **Interfaces:**
-- Consumes: `registry.cmdbee.org` reachable (Task 1.2), `HARBOR_ADMIN_PW`.
+- Consumes: `harbor.cmdbee.org` reachable (Task 1.2), `HARBOR_ADMIN_PW`.
 - Produces: five public proxy-cache projects (`crossplane`, `upbound`, `quay`, `ghcr`, `dockerhub`) each backed by a registry endpoint to its origin.
 
-- [ ] **Step 1: Write `setup-proxy-cache.sh`** — creates each upstream registry endpoint (`POST /api/v2.0/registries`) then a public proxy-cache project bound to it (`POST /api/v2.0/projects` with `registry_id` + `metadata.public:"true"`). Idempotent (treats 409 as ok). Reads `HARBOR_ADMIN_PW` from env; base URL `https://registry.cmdbee.org`:
+- [ ] **Step 1: Write `setup-proxy-cache.sh`** — creates each upstream registry endpoint (`POST /api/v2.0/registries`) then a public proxy-cache project bound to it (`POST /api/v2.0/projects` with `registry_id` + `metadata.public:"true"`). Idempotent (treats 409 as ok). Reads `HARBOR_ADMIN_PW` from env; base URL `https://harbor.cmdbee.org`:
 
 ```bash
 #!/usr/bin/env bash
 set -uo pipefail
-BASE="https://registry.cmdbee.org"; U="admin"; P="${HARBOR_ADMIN_PW:?set HARBOR_ADMIN_PW}"
+BASE="https://harbor.cmdbee.org"; U="admin"; P="${HARBOR_ADMIN_PW:?set HARBOR_ADMIN_PW}"
 api() { curl -sS -u "$U:$P" -H "Content-Type: application/json" "$@"; }
 # name  type            url
 mirrors="
@@ -141,8 +141,8 @@ done
 ```
 
 - [ ] **Step 2: Run it.** `HARBOR_ADMIN_PW=<pw> bash components/nidavellir/eitri/harbor/setup-proxy-cache.sh` → Expected: each `registry`/`project` line prints `201` or `409`.
-- [ ] **Step 3: Verify a real pull-through** (the load-bearing check — the exact image that failed on Docker Desktop): `docker pull registry.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` → Expected: pulls successfully (Harbor fetches from `xpkg.crossplane.io` and caches). Confirm the cache populated: `curl -fsS -u admin:$HARBOR_ADMIN_PW https://registry.cmdbee.org/api/v2.0/projects/crossplane/repositories` → shows `crossplane/crossplane`.
-- [ ] **Step 4: Commit** the realm GKE infra (values + setup script; NO secrets): `.commits/harbor-gke.md` (`add:` `cluster-gke/harbor/`) → `ws commit realm-siliconsaga` — `feat(cluster-gke): Harbor public-read proxy-cache (image-mirror-registry)`.
+- [ ] **Step 3: Verify a real pull-through** (the load-bearing check): `docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` → Expected: pulls successfully (Harbor fetches from `xpkg.crossplane.io` and caches). Confirm the cache populated: `curl -fsS -u admin:$HARBOR_ADMIN_PW https://harbor.cmdbee.org/api/v2.0/projects/crossplane/repositories` → shows `crossplane/crossplane`.
+- [ ] **Step 4: Commit** the Harbor files (values + setup script; NO secrets) to the Eitri component.
 
 ---
 
@@ -155,13 +155,13 @@ done
 
 **Interfaces:**
 - Consumes: the public Harbor proxy-cache projects (Task 1.3).
-- Produces: Docker Desktop's kind node containerd resolves `xpkg.crossplane.io` + `xpkg.upbound.io` (+ optionally quay/ghcr/docker.io) via `registry.cmdbee.org/<project>`.
+- Produces: Docker Desktop's kind node containerd resolves `xpkg.crossplane.io` + `xpkg.upbound.io` (+ optionally quay/ghcr/docker.io) via `harbor.cmdbee.org/<project>`.
 
 - [ ] **Step 1: Write the `hosts.toml` mapping** for each failing upstream. For `xpkg.crossplane.io` the file `/etc/containerd/certs.d/xpkg.crossplane.io/hosts.toml`:
 
 ```toml
 server = "https://xpkg.crossplane.io"
-[host."https://registry.cmdbee.org/v2/crossplane"]
+[host."https://harbor.cmdbee.org/v2/crossplane"]
   capabilities = ["pull", "resolve"]
   override_path = true
 ```
@@ -169,16 +169,16 @@ server = "https://xpkg.crossplane.io"
   and the analogous file for `xpkg.upbound.io` → `.../v2/upbound`. (README documents the same pattern for `quay.io`→`quay`, `ghcr.io`→`ghcr`, `docker.io`→`dockerhub` if needed.)
 - [ ] **Step 2: Apply into the Docker Desktop node(s).** The kind node is a container named `desktop-worker` (+ `desktop-control-plane`). For each node and each upstream, create the dir + file inside the node, e.g.: `docker exec desktop-worker mkdir -p /etc/containerd/certs.d/xpkg.crossplane.io` then copy the file in (`docker cp <local hosts.toml> desktop-worker:/etc/containerd/certs.d/xpkg.crossplane.io/hosts.toml`). Repeat for `desktop-control-plane` and for `xpkg.upbound.io`.
 - [ ] **Step 3: Confirm containerd reads `certs.d`.** Run: `docker exec desktop-worker cat /etc/containerd/config.toml` and verify `config_path = "/etc/containerd/certs.d"` under the CRI registry section. If absent, add it and `docker exec desktop-worker systemctl restart containerd` (or restart the node). Expected: the config_path is set.
-- [ ] **Step 4: Verify the node pulls through Harbor.** Delete the stuck pods so kubelet re-pulls: `kubectl delete pod -n crossplane --all`. Watch: `kubectl get pods -n crossplane -w` → Expected: images now pull (no more `xpkg.crossplane.io ... EOF`); pods reach `Running`. (If still failing, check `docker exec desktop-worker crictl pull registry.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` directly.)
+- [ ] **Step 4: Verify the node pulls through Harbor.** Delete the stuck pods so kubelet re-pulls: `kubectl delete pod -n crossplane --all`. Watch: `kubectl get pods -n crossplane -w` → Expected: images now pull (no more `xpkg.crossplane.io ... EOF`); pods reach `Running`. (If still failing, check `docker exec desktop-worker crictl pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` directly.)
 
-### Task 2.2: Resume the bootstrap and validate the #20 e2e
+### Task 2.2: Resume the bootstrap through the mirror
 
-- [ ] **Step 1: Re-run bootstrap** (idempotent) from the nordri checkout, in Git Bash: `bash components/nordri/bootstrap.sh homelab realm-siliconsaga`. It re-installs/upgrades through the layers; Crossplane now pulls via Harbor. Expected: progresses past Layer 2.5 (the prior failure) → Traefik → providers → ArgoCD → root-app + realm root-app.
-- [ ] **Step 2: Assert the realm injection (the #20 e2e).** `kubectl get applications -n argo` → Expected: `realm-siliconsaga` root-app present + syncing. `kubectl get keycloakrealmimport -n keycloak` → Expected: `siliconsaga-realm` present (Done=True once Keycloak+ESO up and `secret/leidangr/oidc` seeded; else waiting-on-placeholder = designed resting state). `kubectl get externalsecret -n keycloak` → `leidangr-oidc-realm-secrets` present. Confirm nidavellir itself carries no siliconsaga realm-import (only the realm repo provides it).
-- [ ] **Step 3: Record the result** in the `image-mirror-registry` + `nidavellir-20-realm-config` thalamus arcs (e2e completed on Docker Desktop via Harbor, or the next blocker). Commit the thalamus.
+- [ ] **Step 1: Re-run the cluster's bootstrap** (idempotent). Crossplane's images now resolve through Harbor. Expected: the install progresses past the Crossplane layer that previously failed on the upstream pull, then through the remaining layers.
+- [ ] **Step 2: Confirm the mirror carried it.** `kubectl get pods -n crossplane` → images pulled, pods `Running` (no `xpkg.crossplane.io … EOF`). The central Harbor's `crossplane` proxy-cache project shows the cached artifact.
+- [ ] **Step 3: Record the outcome** (mirror validated, or the next blocker).
 
 ---
 
 ## Self-Review Notes (spec coverage)
 
-- Public-read Harbor proxy-caching all upstreams → Tasks 1.1–1.3. Fresh/auth-less cluster pulls through the public GKE Harbor → Task 2.1 (Docker Desktop is the concrete case). GKE-first rollout → Phases 1 then 2. containerd mirror config (the substrate wrinkle) → Task 2.1, Docker-Desktop/kind variant only (k3s + GKE variants are the phase-3 follow-up, out of scope here per Global Constraints). Caching-on-pull → verified Task 1.3 Step 3. GKE access prerequisite the operator flagged → Phase 0. Harbor-is-heavy risk → trimmed values (no Trivy/Notary/metrics) in Task 1.1. OCI-artifact pass-through risk → the load-bearing Task 1.3 Step 3 pull of the exact `xpkg.crossplane.io` artifact that failed. Non-goals (per-cluster Harbor, k3s/GKE containerd wiring, signing/scanning) → intentionally deferred to the phase-3 plan.
+- Public-read Harbor proxy-caching all upstreams → Tasks 1.1–1.3. Fresh/auth-less cluster pulls through the public GKE Harbor → Task 2.1 (Docker Desktop is the concrete case). GKE-first rollout → Phases 1 then 2. containerd mirror config (the substrate wrinkle) → Task 2.1, Docker-Desktop/kind variant only (k3s + GKE variants are the phase-3 follow-up, out of scope here per Global Constraints). Caching-on-pull → verified Task 1.3 Step 3. GKE access prerequisite → Phase 0. Harbor-is-heavy risk → trimmed values (no Trivy/Notary/metrics) in Task 1.1. OCI-artifact pass-through risk → the load-bearing Task 1.3 Step 3 pull of an `xpkg.crossplane.io` artifact. Non-goals (per-cluster Harbor, k3s/GKE containerd wiring, signing/scanning) → intentionally deferred to the phase-3 plan.

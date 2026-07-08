@@ -21,11 +21,11 @@ First tool under the **Eitri** software-factory sub-component. Design: `../docs/
 6. Expose: `ws k8s apply -f httproute.yaml`
 7. Verify TLS + reach: `curl -fsS https://harbor.cmdbee.org/api/v2.0/health` → `"status":"healthy"`.
 8. Proxy-cache projects: `HARBOR_ADMIN_PW=<pw> bash setup-proxy-cache.sh`
-9. Load-bearing verify (the exact image that failed on Docker Desktop): `docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4`
+9. Verify a real pull-through: `docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` → succeeds (Harbor fetches from `xpkg.crossplane.io` and caches it).
 
 ## Wire Docker Desktop (phase 2)
 
-See `containerd/README.md` — copy the two `hosts.toml` into the kind nodes, then re-run `bootstrap.sh homelab realm-siliconsaga` (Crossplane now pulls via Harbor) and assert the #20 realm-injection e2e.
+A cluster whose container runtime can't pull certain upstreams directly (e.g. a kind-based node's containerd and `xpkg.crossplane.io`) points its containerd at Harbor instead. See `containerd/README.md` — copy the two `hosts.toml` into the kind nodes; pulls of `xpkg.*` then route through Harbor and succeed with no registry auth.
 
 ## Notes
 
