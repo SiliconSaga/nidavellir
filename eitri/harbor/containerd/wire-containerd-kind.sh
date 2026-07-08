@@ -41,7 +41,7 @@ for node in "${NODES[@]}"; do
     rc=1
     continue
   fi
-  if ! docker exec "$node" grep -q '/etc/containerd/certs.d' /etc/containerd/config.toml; then
+  if ! docker exec "$node" grep -qE '^[[:space:]]*config_path[[:space:]]*=[[:space:]]*"[^"]*certs\.d' /etc/containerd/config.toml; then
     echo "⚠️  $node: containerd config_path is not '/etc/containerd/certs.d' — the hosts.toml will be ignored until you set it and restart containerd." >&2
     rc=1
   fi

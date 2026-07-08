@@ -1,5 +1,7 @@
 # Harbor Mirror Registry — Implementation Plan (Phases 0–2)
 
+> **Status (2026-07-08): phases 0–2 executed + validated.** The canonical, copy-pasteable runbook is [`../../harbor/README.md`](../../harbor/README.md) plus the checked-in `../../harbor/` artifacts (`values.yaml`, `httproute.yaml`, `setup-proxy-cache.sh`, `containerd/`). The task bodies below are the original plan of record; where an inline snippet predates the shipped artifacts (notably the early nginx-ingress `values.yaml` sketch vs. the shipped Traefik-Gateway exposure), follow the checked-in files, not the snippet.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (this is verification-driven infra ops with human-gated steps, not code TDD). Steps use checkbox (`- [ ]`) syntax. Steps marked **[HUMAN]** are interactive and must be run by the operator (browser auth, DNS, cluster choice); the agent prepares/verifies around them.
 
 **Goal:** Stand up a public-read Harbor pull-through cache on the durable GKE cluster and point a client cluster's containerd at it, so a runtime that can't pull the upstreams directly (e.g. a Docker-Desktop/kind node and `xpkg.crossplane.io`) resolves them through Harbor with no auth.
@@ -54,13 +56,13 @@
 ### Task 1.1: Install Harbor via Helm
 
 **Files:**
-- Create: `components/nidavellir/eitri/harbor/values.yaml` (Harbor Helm values — realm-owned GKE infra config)
+- Create: `eitri/harbor/values.yaml` (Harbor Helm values — realm-owned GKE infra config)
 
 **Interfaces:**
 - Produces: a running Harbor in ns `harbor` on the GKE cluster, reachable at `https://harbor.cmdbee.org`, admin password in a known secret.
 
 - [ ] **Step 1: Add the chart repo.** Run: `helm repo add harbor https://helm.goharbor.io` then `helm repo update` → Expected: `"harbor" has been added`.
-- [ ] **Step 2: Write `cluster-gke/harbor/values.yaml`** — expose via ingress on the GKE ingress class, TLS from cert-manager, public external URL, trimmed footprint (no Trivy/Notary for a proxy-cache):
+- [ ] **Step 2: Write `eitri/harbor/values.yaml`** — expose via ingress on the GKE ingress class, TLS from cert-manager, public external URL, trimmed footprint (no Trivy/Notary for a proxy-cache):
 
 ```yaml
 expose:
@@ -94,7 +96,7 @@ metrics: { enabled: false }
 - [ ] **Step 3: Confirm the two cluster-specific values** the file marks `<...>`: run `kubectl --context <gke> get ingressclass` (pick the default, e.g. `gce` or a Traefik class) and `kubectl --context <gke> get clusterissuer` (pick the letsencrypt prod issuer). Edit `values.yaml` with the real values.
 - [ ] **Step 4: Install.** Generate a strong admin password locally (do NOT commit it), then:
   `ws k8s create namespace harbor` ·
-  `helm --kube-context <gke> upgrade --install harbor harbor/harbor -n harbor -f components/nidavellir/eitri/harbor/values.yaml --set harborAdminPassword="$HARBOR_ADMIN_PW"`
+  `helm --kube-context <gke> upgrade --install harbor harbor/harbor -n harbor -f eitri/harbor/values.yaml --set-string harborAdminPassword="$HARBOR_ADMIN_PW"`
   → Expected: `STATUS: deployed`.
 - [ ] **Step 5: Verify pods.** Run: `kubectl --context <gke> get pods -n harbor` → Expected: `harbor-core`, `-registry`, `-database`, `-redis`, `-jobservice`, `-portal` all `Running`/`Ready` (may take a few minutes + PVC binds).
 
@@ -107,7 +109,7 @@ metrics: { enabled: false }
 ### Task 1.3: Configure proxy-cache registries + public projects
 
 **Files:**
-- Create: `components/nidavellir/eitri/harbor/setup-proxy-cache.sh` (idempotent Harbor API script)
+- Create: `eitri/harbor/setup-proxy-cache.sh` (idempotent Harbor API script)
 
 **Interfaces:**
 - Consumes: `harbor.cmdbee.org` reachable (Task 1.2), `HARBOR_ADMIN_PW`.
@@ -124,8 +126,8 @@ api() { curl -sS -u "$U:$P" -H "Content-Type: application/json" "$@"; }
 mirrors="
 crossplane docker-registry https://xpkg.crossplane.io
 upbound    docker-registry https://xpkg.upbound.io
-quay       quay            https://quay.io
-ghcr       github-ghcr     https://ghcr.io
+quay       docker-registry https://quay.io
+ghcr       docker-registry https://ghcr.io
 dockerhub  docker-hub      https://hub.docker.com
 "
 echo "$mirrors" | while read -r name type url; do
@@ -140,7 +142,7 @@ echo "$mirrors" | while read -r name type url; do
 done
 ```
 
-- [ ] **Step 2: Run it.** `HARBOR_ADMIN_PW=<pw> bash components/nidavellir/eitri/harbor/setup-proxy-cache.sh` → Expected: each `registry`/`project` line prints `201` or `409`.
+- [ ] **Step 2: Run it.** `HARBOR_ADMIN_PW=<pw> bash eitri/harbor/setup-proxy-cache.sh` → Expected: each `registry`/`project` line prints `201` or `409`.
 - [ ] **Step 3: Verify a real pull-through** (the load-bearing check): `docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` → Expected: pulls successfully (Harbor fetches from `xpkg.crossplane.io` and caches). Confirm the cache populated: `curl -fsS -u admin:$HARBOR_ADMIN_PW https://harbor.cmdbee.org/api/v2.0/projects/crossplane/repositories` → shows `crossplane/crossplane`.
 - [ ] **Step 4: Commit** the Harbor files (values + setup script; NO secrets) to the Eitri component.
 
@@ -151,7 +153,7 @@ done
 ### Task 2.1: Point Docker Desktop's node containerd at Harbor
 
 **Files:**
-- Create: `components/nidavellir/eitri/harbor/hosts.d/README.md` (records the mirror mapping + how to apply per node)
+- Create: `eitri/harbor/containerd/README.md` (records the mirror mapping + how to apply per node)
 
 **Interfaces:**
 - Consumes: the public Harbor proxy-cache projects (Task 1.3).

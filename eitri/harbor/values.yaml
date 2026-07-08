@@ -8,7 +8,8 @@
 #
 # Install (never commit the admin password — pass it at install time):
 #   helm --kube-context <gke> upgrade --install harbor harbor/harbor -n harbor \
-#     -f values.yaml --set harborAdminPassword="$HARBOR_ADMIN_PW"
+#     -f values.yaml --set-string harborAdminPassword="$HARBOR_ADMIN_PW"
+# (--set-string so special chars in a strong password are passed literally.)
 
 expose:
   type: clusterIP

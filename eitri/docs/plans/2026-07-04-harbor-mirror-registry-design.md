@@ -80,5 +80,5 @@ A small, substrate-aware helper (a DaemonSet that writes `hosts.toml`, or a boot
 
 ## References
 
-- `components/nordri/platform/fundamentals/manifests/crossplane-providers.yaml` (`xpkg.upbound.io` pins) + `platform/fundamentals/apps/crossplane.yaml` (`charts.crossplane.io`; core images resolve from `xpkg.crossplane.io`).
+- Sibling component **nordri** (not this repo): `platform/fundamentals/manifests/crossplane-providers.yaml` (`xpkg.upbound.io` pins) + `platform/fundamentals/apps/crossplane.yaml` (`charts.crossplane.io`; core images resolve from `xpkg.crossplane.io`) — where the stack's `xpkg.*` upstreams are declared.
 - The container-runtime-vs-`xpkg.crossplane.io` pull failure (kind-based containerd `short read … unexpected EOF` where host docker succeeds) that motivated this capability.

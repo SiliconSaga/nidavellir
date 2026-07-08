@@ -15,7 +15,7 @@ First tool under the **Eitri** software-factory sub-component. Design: `../docs/
 1. Namespace: `ws k8s create namespace harbor`
 2. Chart repo (two calls — no shell composition under the hook): `helm repo add harbor https://helm.goharbor.io` then `helm repo update`
 3. Install (admin password from `.env` — `HARBOR_ADMIN_PW`, not committed):
-   `helm --kube-context gke_teralivekubernetes_us-east1-d_ttf-cluster upgrade --install harbor harbor/harbor -n harbor -f values.yaml --set harborAdminPassword="$HARBOR_ADMIN_PW"`
+   `helm --kube-context gke_teralivekubernetes_us-east1-d_ttf-cluster upgrade --install harbor harbor/harbor -n harbor -f values.yaml --set-string harborAdminPassword="$HARBOR_ADMIN_PW"` (`--set-string` so special characters in a strong password are passed literally)
 4. Wait for pods: `ws k8s get pods -n harbor` (core / registry / database / redis / jobservice / portal / nginx Ready).
 5. Confirm the front service name: `ws k8s get svc -n harbor` → expect `harbor` (port 80); if different, fix `httproute.yaml` backendRef.
 6. Expose: `ws k8s apply -f httproute.yaml`
