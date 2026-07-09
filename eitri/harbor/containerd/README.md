@@ -1,43 +1,54 @@
 # containerd registry mirrors (client config)
 
-These `hosts.toml` files point a cluster's node containerd at the public Harbor proxy-cache instead of pulling the failing upstreams directly. They are CLIENT config — applied per node, per substrate — separate from Harbor itself. Each installs at `/etc/containerd/certs.d/<upstream>/hosts.toml`.
+Client-side config that points a cluster's node container runtime at the public Harbor proxy-cache for the `xpkg.*` registries, instead of pulling them from the upstream directly. It's separate from Harbor itself and applied per node.
 
-## Docker Desktop / kind
+The **mapping is identical everywhere** — route `xpkg.crossplane.io` → `harbor.<domain>/v2/crossplane` and `xpkg.upbound.io` → `harbor.<domain>/v2/upbound` (the two `hosts.toml` files here). Only **how you deliver it to the nodes differs by substrate**, because runtimes read mirror config from different places.
 
-The kind nodes are Docker containers (`desktop-control-plane`, `desktop-worker`).
+## containerd via `certs.d` (Docker Desktop, kind, generic containerd)
 
-**Quick path** — the helper wires both default nodes and both `xpkg.*` registries, verifies `config_path`, and prints a smoke-test (idempotent):
+containerd reads per-registry mirror files from `/etc/containerd/certs.d/<upstream>/hosts.toml` — but only when its config has `config_path = "/etc/containerd/certs.d"` (the CRI registry section; kind images set this by default). The files are read per-pull, so no containerd restart is needed once they're in place.
+
+On Docker Desktop / kind the nodes are Docker containers, so the helper installs them:
 
 ```
-./wire-containerd-kind.sh                       # default Docker Desktop nodes
+./wire-containerd-kind.sh                       # default Docker Desktop nodes (desktop-control-plane, desktop-worker)
 ./wire-containerd-kind.sh <node> [<node> ...]   # explicit kind node containers
 ```
 
-**Manual** — for each node and each upstream:
+Manual equivalent (per node, per upstream):
 
 ```
 docker exec <node> mkdir -p /etc/containerd/certs.d/xpkg.crossplane.io
 docker cp xpkg.crossplane.io.hosts.toml <node>:/etc/containerd/certs.d/xpkg.crossplane.io/hosts.toml
-# repeat for xpkg.upbound.io
 ```
 
-Confirm containerd reads `certs.d` (`config_path = "/etc/containerd/certs.d"` under the CRI registry section — kind images set this by default):
+Check `config_path` and, if it's absent, add it + restart containerd, then delete the stuck pods so kubelet re-pulls:
 
 ```
-docker exec <node> grep -n 'config_path' /etc/containerd/config.toml
-```
-
-containerd reads `certs.d` per-pull, so no restart is needed once the files are in place. If `config_path` is missing, add it and restart containerd in the node, then force a re-pull (delete the stuck pods so kubelet retries):
-
-```
+docker exec <node> grep -n config_path /etc/containerd/config.toml   # want: config_path = "/etc/containerd/certs.d"
 kubectl delete pod -n crossplane --all
 ```
 
-> **Windows / Git Bash:** `docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands above fail with "No such file or directory". Prefix them with `MSYS_NO_PATHCONV=1` (the helper script does this for you) or wrap the in-container command in `sh -c '...'`.
-## k3s (homelab Rancher Desktop) — phase 3
+## k3s (Rancher Desktop, pure k3s, k3d)
 
-k3s reads `/etc/rancher/k3s/registries.yaml` (an ordered `endpoint` list per mirror), not `certs.d`. Translate the same mapping there. Deferred to the phase-3 rollout.
+k3s does **not** read `certs.d` directly — it owns `/etc/rancher/k3s/registries.yaml` and generates the containerd mirror config from it. So on any k3s cluster (Rancher Desktop and a plain k3s install alike) you translate the same mapping into `registries.yaml` rather than copying the `hosts.toml`:
 
-## GKE nodes — phase 3
+```yaml
+mirrors:
+  xpkg.crossplane.io:
+    endpoint:
+      - "https://harbor.<domain>/v2/crossplane"
+  xpkg.upbound.io:
+    endpoint:
+      - "https://harbor.<domain>/v2/upbound"
+```
 
-Node containerd config via a privileged DaemonSet that writes `certs.d` on each node. Deferred to phase-3.
+Write that on each node and restart k3s (`systemctl restart k3s` on a server, `k3s-agent` on an agent). k3s turns it into the same `certs.d` hosts.toml under the hood; confirm the endpoint path-rewrite behavior against the k3s registry docs for your version.
+
+## GKE / managed nodes
+
+Same `certs.d` mechanism as the first section, but you can't `docker exec`/`docker cp` into managed nodes. Deliver the `hosts.toml` with a privileged **DaemonSet** (or a node-startup script) that writes `/etc/containerd/certs.d/<upstream>/hosts.toml` on every node and ensures `config_path` is set. It must be persistent: managed node pools recreate nodes on autoscale/upgrade, and each new node needs the config. (A public-read Harbor needs no node credentials; a private/authenticated mirror would add that as the extra piece.)
+
+## Windows / Git Bash
+
+`docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands fail with "No such file or directory". Prefix them with `MSYS_NO_PATHCONV=1` (the helper script does this) or wrap the in-container command in `sh -c '...'`.
