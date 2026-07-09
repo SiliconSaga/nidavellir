@@ -1,0 +1,160 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xharbor
+  labels:
+    provider: harbor
+spec:
+  mode: Pipeline
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XHarbor
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (EnvironmentConfig → context).
+  # Provides storageClass + domain per environment (homelab/gke).
+  # Also carries harborRole/harborCentral for the later local/
+  # central proxy-cache split (not consumed by this slice yet).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: Harbor Helm Release — public-read pull-through cache.
+  # Values are a templated copy of eitri/harbor/values.yaml:
+  # externalURL and every PVC storageClass come from cluster
+  # identity, the registry PVC size from the XR parameters.
+  # Database/redis are left at chart defaults (bundled) — vending
+  # them from Mimir (Postgres + valkey) is a later task.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-harbor
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $storageClass := $identity.storageClass -}}
+          {{- $domain := $identity.domain -}}
+          {{- $params := .observed.composite.resource.spec.parameters -}}
+          {{- $version := $params.chartVersion | default "1.16.0" -}}
+          {{- $registrySize := $params.registrySize | default "100Gi" -}}
+          apiVersion: helm.crossplane.io/v1beta1
+          kind: Release
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-release
+          spec:
+            forProvider:
+              chart:
+                name: harbor
+                repository: https://helm.goharbor.io
+                version: "{{ $version }}"
+              namespace: harbor
+              values:
+                expose:
+                  type: clusterIP
+                  tls:
+                    enabled: false
+                  clusterIP:
+                    name: harbor
+                    ports:
+                      httpPort: 80
+                externalURL: https://harbor.{{ $domain }}
+                persistence:
+                  enabled: true
+                  resourcePolicy: "keep"
+                  persistentVolumeClaim:
+                    registry:
+                      storageClass: {{ $storageClass }}
+                      accessMode: ReadWriteOnce
+                      size: {{ $registrySize }}
+                    jobservice:
+                      jobLog:
+                        storageClass: {{ $storageClass }}
+                        accessMode: ReadWriteOnce
+                        size: 5Gi
+                    database:
+                      storageClass: {{ $storageClass }}
+                      size: 5Gi
+                    redis:
+                      storageClass: {{ $storageClass }}
+                      size: 5Gi
+                trivy:
+                  enabled: false
+                notary:
+                  enabled: false
+                metrics:
+                  enabled: false
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: HTTPRoute via provider-kubernetes Object. TLS comes
+  # free from the wildcard cert on the Gateway's websecure
+  # listener (vegvisir); host resolves per-env via $domain.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-ingress
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $domain := $identity.domain -}}
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: harbor
+                  namespace: harbor
+                spec:
+                  parentRefs:
+                    - group: gateway.networking.k8s.io
+                      name: traefik-gateway
+                      namespace: kube-system
+                      kind: Gateway
+                      sectionName: websecure
+                  hostnames:
+                    - "harbor.{{ $domain }}"
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - group: ""
+                          kind: Service
+                          name: harbor
+                          port: 80
+                          weight: 1
+
+  # ──────────────────────────────────────────────────────────
+  # Step 3: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready

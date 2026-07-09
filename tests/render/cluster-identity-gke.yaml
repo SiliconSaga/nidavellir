@@ -10,3 +10,4 @@ data:
   domain: cmdbee.org
   environment: gke
   storageClass: standard-rwo
+  harborRole: central
