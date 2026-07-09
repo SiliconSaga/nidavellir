@@ -1,0 +1,44 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xharbors.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XHarbor
+    plural: xharbors
+  claimNames:
+    kind: HarborInstance
+    plural: harborinstances
+  defaultCompositionRef:
+    name: xharbor
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: "Singleton per cluster: the composition pins the harbor namespace and Service names so consumers get stable references. The instance's role (central|local), domain, and storageClass come from the cluster-identity EnvironmentConfig — not from parameters. Create exactly one HarborInstance claim per cluster."
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    chartVersion:
+                      type: string
+                      default: "1.16.0"
+                      description: "Harbor Helm chart version (from https://helm.goharbor.io). Confirm against the deployed chart before release."
+                    registrySize:
+                      type: string
+                      default: "100Gi"
+                      description: "PVC size for the proxy-cache blob store (grows with mirrored images)."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status
