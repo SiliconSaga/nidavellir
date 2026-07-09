@@ -1,0 +1,50 @@
+# Harbor Helm values — public-read pull-through cache on GKE (ttf-cluster).
+#
+# Exposure: clusterIP (Harbor's own nginx front proxy handles /v2/, /api/, /),
+# fronted by the shared Traefik Gateway via httproute.yaml. TLS terminates at the
+# Gateway using the existing *.cmdbee.org wildcard cert, so Harbor itself runs
+# plain HTTP internally (expose.tls.enabled=false). Trimmed of Trivy/Notary/
+# metrics — this instance only proxy-caches public upstream images.
+#
+# Install (never commit the admin password — pass it at install time):
+#   helm --kube-context <gke> upgrade --install harbor harbor/harbor -n harbor \
+#     -f values.yaml --set-string harborAdminPassword="$HARBOR_ADMIN_PW"
+# (--set-string so special chars in a strong password are passed literally.)
+
+expose:
+  type: clusterIP
+  tls:
+    enabled: false
+  clusterIP:
+    name: harbor          # -> Service harbor:80 in ns harbor (httproute backend)
+    ports:
+      httpPort: 80
+
+externalURL: https://harbor.cmdbee.org
+
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      storageClass: standard-rwo
+      accessMode: ReadWriteOnce
+      size: 100Gi          # cached blob store — grows with mirrored images
+    jobservice:
+      jobLog:
+        storageClass: standard-rwo
+        accessMode: ReadWriteOnce
+        size: 5Gi
+    database:
+      storageClass: standard-rwo
+      size: 5Gi
+    redis:
+      storageClass: standard-rwo
+      size: 5Gi
+
+trivy:
+  enabled: false
+notary:
+  enabled: false
+metrics:
+  enabled: false

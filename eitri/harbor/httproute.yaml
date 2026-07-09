@@ -1,0 +1,35 @@
+# Exposes Harbor at harbor.cmdbee.org via the shared Traefik Gateway — mirrors
+# the keycloak/gitea pattern (parentRef the kube-system traefik-gateway's
+# websecure listener; TLS is the *.cmdbee.org wildcard cert already on that
+# listener, so no per-host Certificate is needed).
+#
+# group/kind/weight are Gateway-API admission defaults spelled out so ArgoCD
+# (if this graduates to a managed app) doesn't report perpetual OutOfSync.
+#
+# Backend: the chart's clusterIP front service `harbor` (port 80) — verify the
+# exact name post-install with `kubectl get svc -n harbor`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      name: traefik-gateway
+      namespace: kube-system
+      kind: Gateway
+      sectionName: websecure
+  hostnames:
+    - "harbor.cmdbee.org"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: harbor
+          port: 80
+          weight: 1

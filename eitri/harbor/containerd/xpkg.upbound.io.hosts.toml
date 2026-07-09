@@ -1,0 +1,8 @@
+# containerd registry mirror — route xpkg.upbound.io pulls through the public
+# Harbor proxy-cache project "upbound". Install as:
+#   /etc/containerd/certs.d/xpkg.upbound.io/hosts.toml
+server = "https://xpkg.upbound.io"
+
+[host."https://harbor.cmdbee.org/v2/upbound"]
+  capabilities = ["pull", "resolve"]
+  override_path = true

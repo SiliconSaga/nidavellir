@@ -1,0 +1,9 @@
+# containerd registry mirror — route xpkg.crossplane.io pulls through the public
+# Harbor proxy-cache project "crossplane". Install as:
+#   /etc/containerd/certs.d/xpkg.crossplane.io/hosts.toml
+# (see containerd/README.md for how to apply per substrate).
+server = "https://xpkg.crossplane.io"
+
+[host."https://harbor.cmdbee.org/v2/crossplane"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
