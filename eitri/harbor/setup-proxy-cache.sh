@@ -14,8 +14,11 @@ U="admin"; P="${HARBOR_ADMIN_PW:?set HARBOR_ADMIN_PW}"
 # Auth via a stdin curl config (-K -) so the admin password never lands on the
 # process argv (readable via ps / /proc/<pid>/cmdline for the call's duration).
 api() {
+  # Escape backslash then double-quote for curl config-file quoted-string syntax.
+  local u="${U//\\/\\\\}"; u="${u//\"/\\\"}"
+  local p="${P//\\/\\\\}"; p="${p//\"/\\\"}"
   curl -sS -H "Content-Type: application/json" -K - "$@" <<EOF
-user = "$U:$P"
+user = "$u:$p"
 EOF
 }
 

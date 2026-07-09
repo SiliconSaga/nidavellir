@@ -33,8 +33,7 @@ containerd reads `certs.d` per-pull, so no restart is needed once the files are 
 kubectl delete pod -n crossplane --all
 ```
 
-> **Windows / Git Bash:** `docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands above fail with "No such file or directory". Prefix them with `MSYS_NO_PATHCONV=1` (the helper script does this for you) or wrap the in-container command in `sh -c '...'`. See `docs/workspace-setup.md` for the broader Git-Bash path-handling notes.
-
+> **Windows / Git Bash:** `docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands above fail with "No such file or directory". Prefix them with `MSYS_NO_PATHCONV=1` (the helper script does this for you) or wrap the in-container command in `sh -c '...'`.
 ## k3s (homelab Rancher Desktop) — phase 3
 
 k3s reads `/etc/rancher/k3s/registries.yaml` (an ordered `endpoint` list per mirror), not `certs.d`. Translate the same mapping there. Deferred to the phase-3 rollout.
