@@ -172,6 +172,11 @@ spec:
                     username: harbor
                     coreDatabase: harbor
                     existingSecret: harbor-postgres-user-secret
+                # harbor-admin is provisioned out-of-band via ESO/OpenBao (the stack's
+                # secret pattern, Phase-2 wiring) — without this the chart defaults the
+                # admin password to the well-known Harbor12345.
+                existingSecretAdminPassword: harbor-admin
+                existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
                 trivy:
                   enabled: false
                 notary:
@@ -268,6 +273,13 @@ spec:
           {{- $role := $identity.harborRole -}}
           {{- $central := $identity.harborCentral -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- $mirrors := "" -}}
+          {{- if eq $role "central" -}}
+          {{- $mirrors = "crossplane docker-registry https://xpkg.crossplane.io\nupbound docker-registry https://xpkg.upbound.io\nquay docker-registry https://quay.io\nghcr docker-registry https://ghcr.io\ndockerhub docker-hub https://hub.docker.com" -}}
+          {{- else -}}
+          {{- $mirrors = printf "crossplane docker-registry https://%s\nupbound docker-registry https://%s\nquay docker-registry https://%s\nghcr docker-registry https://%s\ndockerhub docker-registry https://%s" $central $central $central $central $central -}}
+          {{- end -}}
+          {{- $jobSuffix := (printf "%s|%s|%s" $role $mirrors $central) | sha256sum | trunc 10 -}}
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object
           metadata:
@@ -297,10 +309,23 @@ spec:
                     api() {
                       local u="${U//\\/\\\\}"; u="${u//\"/\\\"}"
                       local p="${P//\\/\\\\}"; p="${p//\"/\\\"}"
-                      curl -sS -H "Content-Type: application/json" -K - "$@" <<EOF
+                      curl -sS --connect-timeout 5 --max-time 30 -H "Content-Type: application/json" -K - "$@" <<EOF
                     user = "$u:$p"
                     EOF
                     }
+                    # Wait for Harbor's API to come up before touching registries/projects —
+                    # a fresh install races this Job against Harbor's own startup.
+                    ready=0
+                    for i in $(seq 1 30); do
+                      health_code="$(curl -sS --connect-timeout 5 --max-time 30 -o /dev/null -w "%{http_code}" "$BASE/api/v2.0/health")"
+                      if [ "$health_code" = "200" ]; then ready=1; break; fi
+                      echo "waiting for Harbor to become ready (attempt $i/30, last status: $health_code)..." >&2
+                      sleep 5
+                    done
+                    if [ "$ready" -ne 1 ]; then
+                      echo "Harbor never became ready after 30 attempts; aborting." >&2
+                      exit 1
+                    fi
                     fails=0
                     ok() { case "$1" in 2*|409) return 0 ;; *) return 1 ;; esac; }
                     while read -r name type url; do
@@ -339,7 +364,9 @@ spec:
                 apiVersion: batch/v1
                 kind: Job
                 metadata:
-                  name: harbor-proxy-cache-setup
+                  # Content-hash suffix: a Job is immutable, so this must change when
+                  # role/MIRRORS/central-host change, or a stale Job blocks a re-run.
+                  name: harbor-proxy-cache-setup-{{ $jobSuffix }}
                   namespace: harbor
                 spec:
                   backoffLimit: 3
@@ -360,19 +387,7 @@ spec:
                                   key: HARBOR_ADMIN_PASSWORD
                             - name: MIRRORS
                               value: |
-                                {{- if eq $role "central" }}
-                                crossplane docker-registry https://xpkg.crossplane.io
-                                upbound docker-registry https://xpkg.upbound.io
-                                quay docker-registry https://quay.io
-                                ghcr docker-registry https://ghcr.io
-                                dockerhub docker-hub https://hub.docker.com
-                                {{- else }}
-                                crossplane docker-registry https://{{ $central }}
-                                upbound docker-registry https://{{ $central }}
-                                quay docker-registry https://{{ $central }}
-                                ghcr docker-registry https://{{ $central }}
-                                dockerhub docker-registry https://{{ $central }}
-                                {{- end }}
+                                {{- $mirrors | nindent 32 }}
                           volumeMounts:
                             - name: script
                               mountPath: /scripts

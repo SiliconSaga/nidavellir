@@ -145,7 +145,7 @@ Consult the Harbor chart's `values.yaml` (`helm show values harbor/harbor`) for 
 - [ ] **Step 5: Render and verify.**
 
 Run: the same `crossplane render` command as Task 3 Step 6.
-Expected: the output now also contains a `PostgreSQLInstance` `harbor-postgres`, and the `Release` values show `database.type: external` with **no** bundled `database` PVC. Redis/`bitnami`-bundled PVCs remain present and unchanged.
+Expected: the output now also contains a `PostgreSQLInstance` `harbor-postgres`, and the `Release` values show `database.type: external` with **no** bundled `database` PVC. The chart-bundled redis PVC (`goharbor/redis-photon`) remains present and unchanged.
 
 - [ ] **Step 6: Commit.** `ws commit nidavellir` — `feat(eitri): vend Harbor Postgres from Mimir (external DB); redis stays chart-bundled`.
 

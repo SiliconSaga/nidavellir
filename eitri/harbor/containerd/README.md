@@ -40,17 +40,25 @@ k3s does **not** read `certs.d` directly — it owns `/etc/rancher/k3s/registrie
 mirrors:
   xpkg.crossplane.io:
     endpoint:
-      - "https://harbor.<domain>/v2/crossplane"
+      - "https://harbor.<domain>/v2/crossplane"       # local mirror
+      - "https://harbor.cmdbee.org/v2/crossplane"     # central cache
+      - "https://xpkg.crossplane.io"                  # upstream origin
   xpkg.upbound.io:
     endpoint:
-      - "https://harbor.<domain>/v2/upbound"
+      - "https://harbor.<domain>/v2/upbound"          # local mirror
+      - "https://harbor.cmdbee.org/v2/upbound"        # central cache
+      - "https://xpkg.upbound.io"                     # upstream origin
 ```
+
+List each registry's endpoints in that order — local mirror, then central cache, then upstream origin — so a pull falls back local → central → origin: if the local Harbor hasn't cached an image yet (or is still bootstrapping), the pull tries the central cache next, and only hits the true origin as a last resort.
 
 Write that on each node and restart k3s (`systemctl restart k3s` on a server, `k3s-agent` on an agent). k3s turns it into the same `certs.d` hosts.toml under the hood; confirm the endpoint path-rewrite behavior against the k3s registry docs for your version.
 
 ## GKE / managed nodes
 
-Same `certs.d` mechanism as the first section, but you can't `docker exec`/`docker cp` into managed nodes. Deliver the `hosts.toml` with a privileged **DaemonSet** (or a node-startup script) that writes `/etc/containerd/certs.d/<upstream>/hosts.toml` on every node and ensures `config_path` is set. It must be persistent: managed node pools recreate nodes on autoscale/upgrade, and each new node needs the config. (A public-read Harbor needs no node credentials; a private/authenticated mirror would add that as the extra piece.)
+GKE nodes pull the upstream origins directly — **no node-level redirect is needed or wanted** here. The containerd-can't-pull-without-a-redirect problem is a kind-only quirk (kind's node image ships `config_path` wired for `certs.d`); GKE's stock containerd has no such gap, so wiring a privileged DaemonSet to rewrite `certs.d`/`hosts.toml` on every node would just add a central-Harbor bootstrap self-dependency for no benefit.
+
+Where you *do* want the proxy-cache used on GKE, pin the stack's own image references to `harbor.<domain>` at the manifest level (i.e. point the workload's `image:` at the Harbor-fronted path) instead of redirecting the node runtime.
 
 ## Windows / Git Bash
 
