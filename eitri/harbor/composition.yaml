@@ -13,9 +13,9 @@ spec:
 
   # ──────────────────────────────────────────────────────────
   # Step 0: Load cluster identity (EnvironmentConfig → context).
-  # Provides storageClass + domain per environment (homelab/gke).
-  # Also carries harborRole/harborCentral for the later local/
-  # central proxy-cache split (not consumed by this slice yet).
+  # Provides storageClass + domain per environment (homelab/gke),
+  # plus harborRole/harborCentral driving the proxy-cache split
+  # (Step 4: central binds origins, local chains to central).
   # ──────────────────────────────────────────────────────────
   - step: load-cluster-identity
     functionRef:
@@ -201,7 +201,158 @@ spec:
                           weight: 1
 
   # ──────────────────────────────────────────────────────────
-  # Step 4: Auto-ready
+  # Step 4: Role-driven proxy-cache setup. A post-install Job runs
+  # the same registry+project bootstrap as the standalone
+  # eitri/harbor/setup-proxy-cache.sh (POST /api/v2.0/registries,
+  # then a public proxy-cache /api/v2.0/projects bound to it; 2xx
+  # or 409 = success). The embedded script below is that logic
+  # verbatim, with two adaptations for running in-cluster: BASE
+  # defaults to the in-cluster Service (http://harbor, matching
+  # expose.tls.enabled=false above) instead of externalURL, and
+  # the mirror list comes from $MIRRORS (env), so the ONLY thing
+  # that varies by role is which registries populate $MIRRORS:
+  #   central: the five true origins (xpkg.crossplane.io,
+  #     xpkg.upbound.io, quay.io, ghcr.io, and Docker Hub via
+  #     Harbor's docker-hub adapter, whose required endpoint URL
+  #     is https://hub.docker.com — not docker.io directly).
+  #   local: the SAME five project names, all bound to the
+  #     central Harbor (https://{{ $identity.harborCentral }})
+  #     via the generic docker-registry adapter, chaining
+  #     local → central → origin. Central resolves the forwarded
+  #     path under its own identically-named project, so no
+  #     per-project path rewriting is needed here.
+  # Ordering: this Job must run AFTER Harbor's API is serving
+  # (see the composition's flagged live concerns) — Phase 1 only
+  # proves the render picks the right registry list per role.
+  # ──────────────────────────────────────────────────────────
+  - step: setup-proxy-cache
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $role := $identity.harborRole -}}
+          {{- $central := $identity.harborCentral -}}
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-proxy-cache-script
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: proxy-cache-script
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: harbor-proxy-cache-script
+                  namespace: harbor
+                data:
+                  setup-proxy-cache.sh: |
+                    #!/usr/bin/env bash
+                    # Configure Harbor's public-read proxy-cache projects (idempotent).
+                    # In-cluster copy of eitri/harbor/setup-proxy-cache.sh's API logic:
+                    # BASE targets the Service instead of externalURL, and the mirror
+                    # list is read from $MIRRORS (env, injected per-role by the
+                    # composition) instead of a literal here-string.
+                    set -uo pipefail
+                    command -v jq >/dev/null 2>&1 || { echo "setup-proxy-cache.sh requires jq on PATH." >&2; exit 1; }
+                    BASE="${HARBOR_URL:-http://harbor}"
+                    U="admin"; P="${HARBOR_ADMIN_PW:?set HARBOR_ADMIN_PW}"
+                    api() {
+                      local u="${U//\\/\\\\}"; u="${u//\"/\\\"}"
+                      local p="${P//\\/\\\\}"; p="${p//\"/\\\"}"
+                      curl -sS -H "Content-Type: application/json" -K - "$@" <<EOF
+                    user = "$u:$p"
+                    EOF
+                    }
+                    fails=0
+                    ok() { case "$1" in 2*|409) return 0 ;; *) return 1 ;; esac; }
+                    while read -r name type url; do
+                      [ -z "$name" ] && continue
+                      code="$(api -X POST "$BASE/api/v2.0/registries" \
+                        -d "{\"name\":\"$name\",\"type\":\"$type\",\"url\":\"$url\",\"insecure\":false}" \
+                        -o /dev/null -w "%{http_code}")"
+                      echo "registry $name -> $url : $code"
+                      ok "$code" || { echo "  ! unexpected status for registry '$name': $code" >&2; fails=$((fails + 1)); }
+                      rid="$(api "$BASE/api/v2.0/registries?q=name%3D$name" | jq -r '.[0].id')"
+                      if [ -z "$rid" ] || [ "$rid" = "null" ]; then
+                        echo "  ! could not resolve registry id for '$name' — skipping project" >&2
+                        fails=$((fails + 1))
+                        continue
+                      fi
+                      code="$(api -X POST "$BASE/api/v2.0/projects" \
+                        -d "{\"project_name\":\"$name\",\"registry_id\":$rid,\"metadata\":{\"public\":\"true\"}}" \
+                        -o /dev/null -w "%{http_code}")"
+                      echo "project  $name (public proxy-cache) : $code"
+                      ok "$code" || { echo "  ! unexpected status for project '$name': $code" >&2; fails=$((fails + 1)); }
+                    done <<< "$MIRRORS"
+                    if [ "$fails" -ne 0 ]; then
+                      echo "$fails Harbor API call(s) returned an unexpected status." >&2
+                      exit 1
+                    fi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-proxy-cache-job
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: proxy-cache-job
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: harbor-proxy-cache-setup
+                  namespace: harbor
+                spec:
+                  backoffLimit: 3
+                  template:
+                    spec:
+                      restartPolicy: Never
+                      containers:
+                        - name: proxy-cache-setup
+                          image: alpine:3.20
+                          command: ["sh", "-c"]
+                          args:
+                            - apk add --no-cache bash curl jq >/dev/null && bash /scripts/setup-proxy-cache.sh
+                          env:
+                            - name: HARBOR_ADMIN_PW
+                              valueFrom:
+                                secretKeyRef:
+                                  name: harbor-core
+                                  key: HARBOR_ADMIN_PASSWORD
+                            - name: MIRRORS
+                              value: |
+                                {{- if eq $role "central" }}
+                                crossplane docker-registry https://xpkg.crossplane.io
+                                upbound docker-registry https://xpkg.upbound.io
+                                quay docker-registry https://quay.io
+                                ghcr docker-registry https://ghcr.io
+                                dockerhub docker-hub https://hub.docker.com
+                                {{- else }}
+                                crossplane docker-registry https://{{ $central }}
+                                upbound docker-registry https://{{ $central }}
+                                quay docker-registry https://{{ $central }}
+                                ghcr docker-registry https://{{ $central }}
+                                dockerhub docker-registry https://{{ $central }}
+                                {{- end }}
+                          volumeMounts:
+                            - name: script
+                              mountPath: /scripts
+                      volumes:
+                        - name: script
+                          configMap:
+                            name: harbor-proxy-cache-script
+
+  # ──────────────────────────────────────────────────────────
+  # Step 5: Auto-ready
   # ──────────────────────────────────────────────────────────
   - step: auto-ready
     functionRef:
