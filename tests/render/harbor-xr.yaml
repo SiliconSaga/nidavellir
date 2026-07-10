@@ -1,0 +1,14 @@
+# Offline-render fixture: a bare XHarbor XR (render takes XRs, not claims).
+# Usage (from the yggdrasil root, crossplane CLI + Docker required):
+#   crossplane render components/nidavellir/tests/render/harbor-xr.yaml \
+#     components/nidavellir/eitri/harbor/composition.yaml \
+#     components/nidavellir/tests/render/functions.yaml \
+#     --extra-resources components/nidavellir/tests/render/cluster-identity-gke.yaml
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XHarbor
+metadata:
+  name: harbor
+spec:
+  parameters:
+    chartVersion: "1.16.0"
+    registrySize: "100Gi"

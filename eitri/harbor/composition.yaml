@@ -1,0 +1,422 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xharbor
+  labels:
+    provider: harbor
+spec:
+  mode: Pipeline
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XHarbor
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: Load cluster identity (EnvironmentConfig → context).
+  # Provides storageClass + domain per environment (homelab/gke),
+  # plus harborRole/harborCentral driving the proxy-cache split
+  # (Step 4: central binds origins, local chains to central).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0.5: Explicit harbor Namespace, ahead of the namespaced
+  # Objects below (Postgres claim, HTTPRoute, proxy-cache
+  # ConfigMap/Job), so they don't race Helm's own namespace
+  # creation on a fresh cluster.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-namespace
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-namespace
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-namespace
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: harbor
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: Harbor's Postgres — a Mimir PostgreSQLInstance claim,
+  # same vending pattern as keycloak/postgres-claim.yaml. Percona's
+  # composition yields a ClusterIP Service harbor-postgres:5432 and
+  # the user secret harbor-postgres-user-secret (keys user/password).
+  # Wrapped in a provider-kubernetes Object like the HTTPRoute below,
+  # since it's a claim (CRD-backed), not a provider-helm/-kubernetes
+  # managed resource itself.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-postgres
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-postgres
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-postgres
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: database.example.org/v1alpha1
+                kind: PostgreSQLInstance
+                metadata:
+                  name: harbor-postgres
+                  namespace: harbor
+                spec:
+                  parameters:
+                    storageSize: 5Gi
+                    version: "15"
+                    replicas: 1
+                    databaseName: harbor
+                  compositionSelector:
+                    matchLabels:
+                      provider: percona
+                      service: postgresql
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: Harbor Helm Release — public-read pull-through cache.
+  # Values are a templated copy of eitri/harbor/values.yaml:
+  # externalURL and every PVC storageClass come from cluster
+  # identity, the registry PVC size from the XR parameters.
+  # Postgres is vended from Mimir (external DB, above) — redis
+  # stays chart-bundled for now (valkey-vending is a later task).
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-harbor
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $storageClass := $identity.storageClass -}}
+          {{- $domain := $identity.domain -}}
+          {{- $params := .observed.composite.resource.spec.parameters -}}
+          {{- $version := $params.chartVersion | default "1.16.0" -}}
+          {{- $registrySize := $params.registrySize | default "100Gi" -}}
+          apiVersion: helm.crossplane.io/v1beta1
+          kind: Release
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-release
+          spec:
+            forProvider:
+              chart:
+                name: harbor
+                repository: https://helm.goharbor.io
+                version: "{{ $version }}"
+              namespace: harbor
+              values:
+                fullnameOverride: harbor
+                expose:
+                  type: clusterIP
+                  tls:
+                    enabled: false
+                  clusterIP:
+                    name: harbor
+                    ports:
+                      httpPort: 80
+                externalURL: https://harbor.{{ $domain }}
+                persistence:
+                  enabled: true
+                  resourcePolicy: "keep"
+                  persistentVolumeClaim:
+                    registry:
+                      storageClass: {{ $storageClass }}
+                      accessMode: ReadWriteOnce
+                      size: {{ $registrySize }}
+                    jobservice:
+                      jobLog:
+                        storageClass: {{ $storageClass }}
+                        accessMode: ReadWriteOnce
+                        size: 5Gi
+                    redis:
+                      storageClass: {{ $storageClass }}
+                      size: 5Gi
+                database:
+                  type: external
+                  external:
+                    host: harbor-postgres
+                    port: "5432"
+                    username: harbor
+                    coreDatabase: harbor
+                    existingSecret: harbor-postgres-user-secret
+                # harbor-admin is provisioned out-of-band via ESO/OpenBao (the stack's
+                # secret pattern, Phase-2 wiring) — without this the chart defaults the
+                # admin password to the well-known Harbor12345.
+                existingSecretAdminPassword: harbor-admin
+                existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+                trivy:
+                  enabled: false
+                notary:
+                  enabled: false
+                metrics:
+                  enabled: false
+
+  # ──────────────────────────────────────────────────────────
+  # Step 3: HTTPRoute via provider-kubernetes Object. TLS comes
+  # free from the wildcard cert on the Gateway's websecure
+  # listener (vegvisir); host resolves per-env via $domain.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-ingress
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $domain := $identity.domain -}}
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: harbor
+                  namespace: harbor
+                spec:
+                  parentRefs:
+                    - group: gateway.networking.k8s.io
+                      name: traefik-gateway
+                      namespace: kube-system
+                      kind: Gateway
+                      sectionName: websecure
+                  hostnames:
+                    - "harbor.{{ $domain }}"
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - group: ""
+                          kind: Service
+                          name: harbor
+                          port: 80
+                          weight: 1
+
+  # ──────────────────────────────────────────────────────────
+  # Step 4: Role-driven proxy-cache setup. A post-install Job runs
+  # the same registry+project bootstrap as the standalone
+  # eitri/harbor/setup-proxy-cache.sh (POST /api/v2.0/registries,
+  # then a public proxy-cache /api/v2.0/projects bound to it; 2xx
+  # or 409 = success). The embedded script below is that logic
+  # verbatim, with two adaptations for running in-cluster: BASE
+  # defaults to the in-cluster Service (http://harbor, matching
+  # expose.tls.enabled=false above) instead of externalURL, and
+  # the mirror list comes from $MIRRORS (env), so the ONLY thing
+  # that varies by role is which registries populate $MIRRORS:
+  #   central: the five true origins (xpkg.crossplane.io,
+  #     xpkg.upbound.io, quay.io, ghcr.io, and Docker Hub via
+  #     Harbor's docker-hub adapter, whose required endpoint URL
+  #     is https://hub.docker.com — not docker.io directly).
+  #   local: the SAME five project names, all bound to the
+  #     central Harbor (https://{{ $identity.harborCentral }})
+  #     via the generic docker-registry adapter, chaining
+  #     local → central → origin. Central resolves the forwarded
+  #     path under its own identically-named project, so no
+  #     per-project path rewriting is needed here.
+  # Ordering: this Job must run AFTER Harbor's API is serving
+  # (see the composition's flagged live concerns) — Phase 1 only
+  # proves the render picks the right registry list per role.
+  # ──────────────────────────────────────────────────────────
+  - step: setup-proxy-cache
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $role := $identity.harborRole -}}
+          {{- $central := $identity.harborCentral -}}
+          {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- if and (ne $role "central") (ne $role "local") -}}
+          {{ fail "cluster-identity harborRole must be 'central' or 'local'" }}
+          {{- end -}}
+          {{- if and (eq $role "local") (not $central) -}}
+          {{ fail "harborRole=local requires harborCentral in cluster-identity" }}
+          {{- end -}}
+          {{- $mirrors := "" -}}
+          {{- if eq $role "central" -}}
+          {{- $mirrors = "crossplane docker-registry https://xpkg.crossplane.io\nupbound docker-registry https://xpkg.upbound.io\nquay docker-registry https://quay.io\nghcr docker-registry https://ghcr.io\ndockerhub docker-hub https://hub.docker.com" -}}
+          {{- else -}}
+          {{- $mirrors = printf "crossplane docker-registry https://%s\nupbound docker-registry https://%s\nquay docker-registry https://%s\nghcr docker-registry https://%s\ndockerhub docker-registry https://%s" $central $central $central $central $central -}}
+          {{- end -}}
+          {{/* $scriptVersion is a manual cache-buster: the embedded setup-proxy-cache.sh
+               script below isn't itself hashed, so this date-stamped constant stands in
+               for its content. Bump it whenever that script's logic changes (e.g. the
+               health-check loop), or a stale Job (immutable, keyed on $jobSuffix) will
+               keep its old name and never re-run with the new script. */}}
+          {{- $scriptVersion := "2026-07-10" -}}
+          {{- $jobSuffix := (printf "%s|%s|%s|%s" $role $mirrors $central $scriptVersion) | sha256sum | trunc 10 -}}
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-proxy-cache-script
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: proxy-cache-script
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: harbor-proxy-cache-script
+                  namespace: harbor
+                data:
+                  setup-proxy-cache.sh: |
+                    #!/usr/bin/env bash
+                    # Configure Harbor's public-read proxy-cache projects (idempotent).
+                    # In-cluster copy of eitri/harbor/setup-proxy-cache.sh's API logic:
+                    # BASE targets the Service instead of externalURL, and the mirror
+                    # list is read from $MIRRORS (env, injected per-role by the
+                    # composition) instead of a literal here-string.
+                    set -uo pipefail
+                    command -v jq >/dev/null 2>&1 || { echo "setup-proxy-cache.sh requires jq on PATH." >&2; exit 1; }
+                    BASE="${HARBOR_URL:-http://harbor}"
+                    U="admin"; P="${HARBOR_ADMIN_PW:?set HARBOR_ADMIN_PW}"
+                    api() {
+                      local u="${U//\\/\\\\}"; u="${u//\"/\\\"}"
+                      local p="${P//\\/\\\\}"; p="${p//\"/\\\"}"
+                      curl -sS --connect-timeout 5 --max-time 30 -H "Content-Type: application/json" -K - "$@" <<EOF
+                    user = "$u:$p"
+                    EOF
+                    }
+                    # Wait for Harbor's API to come up before touching registries/projects —
+                    # a fresh install races this Job against Harbor's own startup.
+                    ready=0
+                    for i in $(seq 1 30); do
+                      health_code="$(curl -sS --connect-timeout 5 --max-time 30 -o /dev/null -w "%{http_code}" "$BASE/api/v2.0/health")"
+                      if [ "$health_code" = "200" ]; then ready=1; break; fi
+                      echo "waiting for Harbor to become ready (attempt $i/30, last status: $health_code)..." >&2
+                      sleep 5
+                    done
+                    if [ "$ready" -ne 1 ]; then
+                      echo "Harbor never became ready after 30 attempts; aborting." >&2
+                      exit 1
+                    fi
+                    fails=0
+                    # Known limitation: this is create-idempotent only (2xx = created,
+                    # 409 = already exists = ok). It does NOT reconcile an existing
+                    # registry/project whose upstream URL, adapter type, or registry
+                    # binding has since changed — a 409 short-circuits without checking
+                    # for drift. Detecting and updating that would need a GET-then-PUT
+                    # (or delete-then-recreate) path; deferred as Phase-2 hardening.
+                    ok() { case "$1" in 2*|409) return 0 ;; *) return 1 ;; esac; }
+                    while read -r name type url; do
+                      [ -z "$name" ] && continue
+                      code="$(api -X POST "$BASE/api/v2.0/registries" \
+                        -d "{\"name\":\"$name\",\"type\":\"$type\",\"url\":\"$url\",\"insecure\":false}" \
+                        -o /dev/null -w "%{http_code}")"
+                      echo "registry $name -> $url : $code"
+                      ok "$code" || { echo "  ! unexpected status for registry '$name': $code" >&2; fails=$((fails + 1)); }
+                      rid="$(api "$BASE/api/v2.0/registries?q=name%3D$name" | jq -r '.[0].id')"
+                      if [ -z "$rid" ] || [ "$rid" = "null" ]; then
+                        echo "  ! could not resolve registry id for '$name' — skipping project" >&2
+                        fails=$((fails + 1))
+                        continue
+                      fi
+                      code="$(api -X POST "$BASE/api/v2.0/projects" \
+                        -d "{\"project_name\":\"$name\",\"registry_id\":$rid,\"metadata\":{\"public\":\"true\"}}" \
+                        -o /dev/null -w "%{http_code}")"
+                      echo "project  $name (public proxy-cache) : $code"
+                      ok "$code" || { echo "  ! unexpected status for project '$name': $code" >&2; fails=$((fails + 1)); }
+                    done <<< "$MIRRORS"
+                    if [ "$fails" -ne 0 ]; then
+                      echo "$fails Harbor API call(s) returned an unexpected status." >&2
+                      exit 1
+                    fi
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-proxy-cache-job
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: proxy-cache-job
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  # Content-hash suffix: a Job is immutable, so this must change when
+                  # role/MIRRORS/central-host change, or a stale Job blocks a re-run.
+                  name: harbor-proxy-cache-setup-{{ $jobSuffix }}
+                  namespace: harbor
+                spec:
+                  backoffLimit: 3
+                  template:
+                    spec:
+                      restartPolicy: Never
+                      containers:
+                        - name: proxy-cache-setup
+                          image: alpine:3.20
+                          command: ["sh", "-c"]
+                          args:
+                            - apk add --no-cache bash curl jq >/dev/null && bash /scripts/setup-proxy-cache.sh
+                          env:
+                            - name: HARBOR_ADMIN_PW
+                              valueFrom:
+                                secretKeyRef:
+                                  name: harbor-admin
+                                  key: HARBOR_ADMIN_PASSWORD
+                            - name: MIRRORS
+                              value: |
+                                {{- $mirrors | nindent 32 }}
+                          volumeMounts:
+                            - name: script
+                              mountPath: /scripts
+                      volumes:
+                        - name: script
+                          configMap:
+                            name: harbor-proxy-cache-script
+
+  # ──────────────────────────────────────────────────────────
+  # Step 5: Auto-ready
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready

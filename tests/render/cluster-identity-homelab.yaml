@@ -8,3 +8,5 @@ data:
   domain: homelab.local
   environment: homelab
   storageClass: local-path
+  harborRole: local
+  harborCentral: harbor.cmdbee.org
