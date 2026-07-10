@@ -30,12 +30,55 @@ spec:
             name: cluster-identity
 
   # ──────────────────────────────────────────────────────────
-  # Step 1: Harbor Helm Release — public-read pull-through cache.
+  # Step 1: Harbor's Postgres — a Mimir PostgreSQLInstance claim,
+  # same vending pattern as keycloak/postgres-claim.yaml. Percona's
+  # composition yields a ClusterIP Service harbor-postgres:5432 and
+  # the user secret harbor-postgres-user-secret (keys user/password).
+  # Wrapped in a provider-kubernetes Object like the HTTPRoute below,
+  # since it's a claim (CRD-backed), not a provider-helm/-kubernetes
+  # managed resource itself.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-postgres
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-postgres
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-postgres
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: database.example.org/v1alpha1
+                kind: PostgreSQLInstance
+                metadata:
+                  name: harbor-postgres
+                  namespace: harbor
+                spec:
+                  parameters:
+                    storageSize: 5Gi
+                    version: "15"
+                    replicas: 1
+                    databaseName: harbor
+                  compositionSelector:
+                    matchLabels:
+                      provider: percona
+                      service: postgresql
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: Harbor Helm Release — public-read pull-through cache.
   # Values are a templated copy of eitri/harbor/values.yaml:
   # externalURL and every PVC storageClass come from cluster
   # identity, the registry PVC size from the XR parameters.
-  # Database/redis are left at chart defaults (bundled) — vending
-  # them from Mimir (Postgres + valkey) is a later task.
+  # Postgres is vended from Mimir (external DB, above) — redis
+  # stays chart-bundled for now (valkey-vending is a later task).
   # ──────────────────────────────────────────────────────────
   - step: deploy-harbor
     functionRef:
@@ -88,12 +131,17 @@ spec:
                         storageClass: {{ $storageClass }}
                         accessMode: ReadWriteOnce
                         size: 5Gi
-                    database:
-                      storageClass: {{ $storageClass }}
-                      size: 5Gi
                     redis:
                       storageClass: {{ $storageClass }}
                       size: 5Gi
+                database:
+                  type: external
+                  external:
+                    host: harbor-postgres
+                    port: "5432"
+                    username: harbor
+                    coreDatabase: harbor
+                    existingSecret: harbor-postgres-user-secret
                 trivy:
                   enabled: false
                 notary:
@@ -102,7 +150,7 @@ spec:
                   enabled: false
 
   # ──────────────────────────────────────────────────────────
-  # Step 2: HTTPRoute via provider-kubernetes Object. TLS comes
+  # Step 3: HTTPRoute via provider-kubernetes Object. TLS comes
   # free from the wildcard cert on the Gateway's websecure
   # listener (vegvisir); host resolves per-env via $domain.
   # ──────────────────────────────────────────────────────────
@@ -153,7 +201,7 @@ spec:
                           weight: 1
 
   # ──────────────────────────────────────────────────────────
-  # Step 3: Auto-ready
+  # Step 4: Auto-ready
   # ──────────────────────────────────────────────────────────
   - step: auto-ready
     functionRef:
