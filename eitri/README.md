@@ -16,3 +16,5 @@ Harbor is the first tool brought under Eitri; the build tools already running un
 ## Docs
 
 - `docs/plans/2026-07-04-harbor-mirror-registry-design.md` — the mirror / pull-through-cache capability: topology, the two-tier containerd fallback chain, and how it rolls out across clusters.
+- `docs/plans/2026-07-08-harbor-stack-member-design.md` — graduating Harbor into a Crossplane-managed, environment-aware stack member (central + local pull-through mesh, data stores vended from Mimir).
+- `docs/plans/2026-07-08-harbor-stack-member-plan.md` — the implementation plan for the design above, phased offline-render-validated composition work followed by live GitOps rollout.

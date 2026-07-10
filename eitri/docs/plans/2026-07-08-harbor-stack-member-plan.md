@@ -62,11 +62,11 @@ Expected: `environmentconfig.apiextensions.crossplane.io/cluster-identity config
 - Create: `components/nidavellir/eitri/harbor/xrd.yaml`
 
 **Interfaces:**
-- Produces: a `CompositeResourceDefinition` for `kind: Harbor` (group `eitri.example.org/v1alpha1`, matching the group style of `openbao/xrd.yaml`), with a claim (`HarborClaim`) and minimal `spec.parameters`: `chartVersion` (string, the pinned Harbor chart version) and `registrySize` (string, default `100Gi`, the proxy-cache blob PVC). Role/domain/SC are NOT parameters — they come from cluster-identity. Consumed by Task 3's composition + Task 6's claim.
+- Produces: a `CompositeResourceDefinition` for `kind: XHarbor` (group `nidavellir.siliconsaga.org/v1alpha1`, matching the group style of `openbao/xrd.yaml`), with a claim (`HarborInstance`) and minimal `spec.parameters`: `chartVersion` (string, the pinned Harbor chart version) and `registrySize` (string, default `100Gi`, the proxy-cache blob PVC). Role/domain/SC are NOT parameters — they come from cluster-identity. Consumed by Task 3's composition + Task 6's claim.
 
 - [ ] **Step 1: Read the template.** Read `components/nidavellir/openbao/xrd.yaml` — copy its structure (versions, claimNames, connectionSecretKeys pattern).
 
-- [ ] **Step 2: Write `xrd.yaml`.** A `Harbor`/`HarborClaim` XRD with `spec.parameters` containing exactly `chartVersion` (string, required) and `registrySize` (string, default `"100Gi"`). No `domain`/`storageClass`/`role` params.
+- [ ] **Step 2: Write `xrd.yaml`.** An `XHarbor`/`HarborInstance` XRD with `spec.parameters` containing exactly `chartVersion` (string, required) and `registrySize` (string, default `"100Gi"`). No `domain`/`storageClass`/`role` params.
 
 - [ ] **Step 3: Validate.**
 
@@ -91,7 +91,7 @@ Expected: `compositeresourcedefinition.apiextensions.crossplane.io/... configure
 - [ ] **Step 2: Write the composition skeleton.** Create `composition.yaml` with the same two-step pipeline. In the go-template, bind:
 
 ```
-{{- $identity := (index .context "apiextensions.crossplane.io/environment").data -}}
+{{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
 {{- $storageClass := $identity.storageClass -}}
 {{- $domain := $identity.domain -}}
 {{- $role := $identity.harborRole -}}
@@ -111,22 +111,22 @@ Expected: output contains a `Release` with `externalURL: https://harbor.cmdbee.o
 
 - [ ] **Step 7: Commit.** `ws commit nidavellir` — `feat(eitri): Harbor composition — central Release + HTTPRoute from cluster-identity`.
 
-### Task 4: Vended data stores (Percona Postgres + valkey, external DB/redis)
+### Task 4: Vended data store (Percona Postgres, external DB) — redis stays chart-bundled
 
 **Files:**
 - Modify: `components/nidavellir/eitri/harbor/composition.yaml`
 
 **Interfaces:**
 - Consumes: the composition from Task 3.
-- Produces: the composition additionally emits a Percona `PostgreSQLInstance` claim (`harbor-postgres`) and a valkey instance (`harbor-valkey`), and the Harbor `Release` values switch to `database.type: external` (pointing at `harbor-postgres:5432`, creds from `harbor-postgres-user-secret`) + `redis.type: external` (pointing at the valkey Service). No bundled Postgres/Redis.
+- Produces: the composition additionally emits a Percona `PostgreSQLInstance` claim (`harbor-postgres`), and the Harbor `Release` values switch to `database.type: external` (pointing at `harbor-postgres:5432`, creds from `harbor-postgres-user-secret`). No bundled Postgres. Redis remains chart-bundled in Phase 1 — valkey-vending (`harbor-valkey` + `redis.type: external`) is **deferred, not implemented here** (see design's Open questions).
 
-- [ ] **Step 1: Read the DB-vending pattern.** Read `components/nidavellir/keycloak/postgres-claim.yaml` (the `PostgreSQLInstance` shape: `apiVersion: database.example.org/v1alpha1`, `parameters.{storageSize,version,replicas,databaseName}`, `compositionSelector` `provider: percona`). Find the valkey claim/XRD the stack uses (`components/mimir/valkey/` or `mimir/argocd/apps/valkey-operator.yaml`) and read its claim shape.
+- [ ] **Step 1: Read the DB-vending pattern.** Read `components/nidavellir/keycloak/postgres-claim.yaml` (the `PostgreSQLInstance` shape: `apiVersion: database.example.org/v1alpha1`, `parameters.{storageSize,version,replicas,databaseName}`, `compositionSelector` `provider: percona`).
 
 - [ ] **Step 2: Emit the Postgres claim from the composition.** Add a provider-kubernetes `Object` (or a direct MR if the composition can create claims) rendering a `PostgreSQLInstance` named `harbor-postgres` (ns `harbor`), `databaseName: harbor`, `storageSize: 5Gi`, `version: "15"`, `provider: percona` — mirroring `keycloak/postgres-claim.yaml`.
 
-- [ ] **Step 3: Emit the valkey instance from the composition.** Add the valkey claim/instance (`harbor-valkey`, ns `harbor`) per the shape found in Step 1.
+- [ ] **Step 3 (deferred, not implemented in Phase 1): Emit a valkey instance from the composition.** Once valkey-vending lands, add the valkey claim/instance (`harbor-valkey`, ns `harbor`) and switch the Release to `redis.type: external`. Tracked as deferred work in the design doc — Phase 1 leaves redis chart-bundled.
 
-- [ ] **Step 4: Point the Harbor `Release` at them.** In the templated values, set:
+- [ ] **Step 4: Point the Harbor `Release`'s database at Postgres.** In the templated values, set:
 
 ```yaml
 database:
@@ -136,20 +136,18 @@ database:
     port: "5432"
     username: <from harbor-postgres-user-secret>   # via existingSecret per Harbor chart
     coreDatabase: harbor
-redis:
-  type: external
-  external:
-    addr: harbor-valkey:6379
 ```
 
-Consult the Harbor chart's `values.yaml` (`helm show values harbor/harbor`) for the exact `database.external.*` / `redis.external.*` keys and the existing-secret mechanism for the DB password.
+Redis stays on the chart's bundled defaults (no `redis.type: external`) until valkey-vending is implemented.
+
+Consult the Harbor chart's `values.yaml` (`helm show values harbor/harbor`) for the exact `database.external.*` keys and the existing-secret mechanism for the DB password.
 
 - [ ] **Step 5: Render and verify.**
 
 Run: the same `crossplane render` command as Task 3 Step 6.
-Expected: the output now also contains a `PostgreSQLInstance` `harbor-postgres` and the valkey instance, and the `Release` values show `database.type: external` / `redis.type: external` with **no** bundled `database`/`redis` PVCs.
+Expected: the output now also contains a `PostgreSQLInstance` `harbor-postgres`, and the `Release` values show `database.type: external` with **no** bundled `database` PVC. Redis/`bitnami` bundled PVCs remain present and unchanged.
 
-- [ ] **Step 6: Commit.** `ws commit nidavellir` — `feat(eitri): vend Harbor Postgres+valkey from Mimir (external DB/redis)`.
+- [ ] **Step 6: Commit.** `ws commit nidavellir` — `feat(eitri): vend Harbor Postgres from Mimir (external DB); redis stays chart-bundled`.
 
 ### Task 5: The `local` role (central-targeted proxy-cache) + proxy-cache setup
 

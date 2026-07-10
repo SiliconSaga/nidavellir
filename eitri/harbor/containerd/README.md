@@ -22,11 +22,14 @@ docker exec <node> mkdir -p /etc/containerd/certs.d/xpkg.crossplane.io
 docker cp xpkg.crossplane.io.hosts.toml <node>:/etc/containerd/certs.d/xpkg.crossplane.io/hosts.toml
 ```
 
-Check `config_path` and, if it's absent, add it + restart containerd, then delete the stuck pods so kubelet re-pulls:
+Check `config_path` and, if it's absent, add it + restart containerd, then delete only the specific stuck pods (or roll the affected deployment) so kubelet re-pulls — don't nuke every pod in the `crossplane` namespace, or you'll disrupt unrelated providers/functions/compositions:
 
-```
+```bash
 docker exec <node> grep -n config_path /etc/containerd/config.toml   # want: config_path = "/etc/containerd/certs.d"
-kubectl delete pod -n crossplane --all
+kubectl get pods -n crossplane                                       # identify the stuck pod(s) — e.g. ImagePullBackOff
+kubectl delete pod -n crossplane <stuck-pod-name> [<stuck-pod-name> ...]
+# or, if the pod belongs to a Deployment:
+kubectl rollout restart deployment/<affected-deployment> -n crossplane
 ```
 
 ## k3s (Rancher Desktop, pure k3s, k3d)

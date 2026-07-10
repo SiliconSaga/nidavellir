@@ -10,7 +10,9 @@ Files here:
 
 ## Deploy
 
-Prerequisites: a kubectl/helm context for the target cluster; a `*.<domain>` wildcard DNS + cert that already covers `harbor.<domain>` (so there's no per-host DNS or cert step); and an admin password in the workspace `.env` (`HARBOR_ADMIN_PW`, gitignored). This instance runs on the GKE cluster `ttf-cluster` at `harbor.cmdbee.org`.
+> **Current/interim path.** The steps below are a direct `helm upgrade --install`, run by hand outside Crossplane. Running them against a cluster that already has the `XHarbor` composition managing this namespace will create an unmanaged duplicate release — don't run both against the same cluster/namespace. The target deployment path is the `XHarbor` claim + composition (`eitri/harbor/xrd.yaml` + `composition.yaml`), applied via GitOps in Phase 2; once that's wired up, this section will be superseded.
+
+Prerequisites: a kubectl/helm context for the target cluster; a `*.<domain>` wildcard DNS + cert that already covers `harbor.<domain>` (so there's no per-host DNS or cert step); and an admin password in the workspace `.env` (`HARBOR_ADMIN_PW`, gitignored). `.env` isn't auto-exported into your shell — load it first (e.g. `set -a; source .env; set +a` from the workspace root, or export `HARBOR_ADMIN_PW` manually) before the commands below reference it. (Once the composition manages this instance, the admin secret instead comes from the Crossplane-created `harbor-core` Secret — see the composition's `deploy-harbor` step.) This instance runs on the GKE cluster `ttf-cluster` at `harbor.cmdbee.org`.
 
 1. Namespace: `ws k8s create namespace harbor`
 2. Chart repo: `helm repo add harbor https://helm.goharbor.io` then `helm repo update`

@@ -66,9 +66,8 @@ Mirrors the openbao/ntfy pattern:
   - the **`HTTPRoute`** on the shared Traefik Gateway for `harbor.{{ .domain }}`;
   - the **proxy-cache project setup** — the current `setup-proxy-cache.sh` logic, driven by `harborRole`: `central` creates one project per origin, `local` creates the mirror projects pointed at `harborCentral`.
 - **Data stores vended from Mimir**, like keycloak:
-  - a Percona **`PostgreSQLInstance`** claim for the DB;
-  - a **valkey** instance (valkey-operator) for Redis;
-  - the Harbor chart runs with `database.type: external` + `redis.type: external` pointing at the vended Services (and their generated user secrets). No bundled Postgres/Redis, no hardcoded storageClass.
+  - a Percona **`PostgreSQLInstance`** claim for the DB — `database.type: external` pointing at the vended Service (and its generated user secret). No bundled Postgres, no hardcoded storageClass.
+  - Redis stays chart-bundled for Phase 1: a **valkey** instance (valkey-operator) + `redis.type: external` is deferred work (see Open questions) — not yet implemented.
 - **GitOps:** a Harbor ArgoCD Application in the nidavellir app-of-apps. Every durable cluster's ArgoCD deploys its Harbor instance; the role comes from that cluster's cluster-identity (`central` on the hub, `local` elsewhere). Ordered **after Mimir** (the DB claim needs the Percona operator + CRDs present) via the same sync-wave / CRD-retry the keycloak-after-Mimir path uses.
 
 ## Client redirect — per substrate
@@ -100,7 +99,7 @@ How a node/workload is pointed at Harbor differs by substrate; the mapping (`xpk
 
 ## Open questions / risks
 
-- **Harbor chart + external Redis/valkey.** Confirm the Harbor chart's `redis.type: external` accepts a valkey endpoint (valkey is Redis-protocol-compatible, but the chart's expectations — e.g. sentinel vs standalone, auth — need verifying against the vended valkey shape).
+- **Harbor chart + external Redis/valkey (deferred).** Phase 1 ships Postgres-only vending; redis stays chart-bundled. Valkey-vending is deferred work: before implementing it, confirm the Harbor chart's `redis.type: external` accepts a valkey endpoint (valkey is Redis-protocol-compatible, but the chart's expectations — e.g. sentinel vs standalone, auth — need verifying against the vended valkey shape).
 - **Central URL discovery for `local`.** `harborCentral` is set literally in the local cluster's cluster-identity. If the hub's hostname ever changes, that's a manual edit on each local cluster — acceptable given how rarely it moves; revisit if instances proliferate.
 - **Mimir dependency on the hub.** The `central` instance also vends its DB from Mimir, so the hub cluster must run Mimir before Harbor — already true (the hub runs the full stack), but the ordering must be explicit in the app-of-apps.
 - **Reinstall window.** Tearing down the live central to redeploy as a composition briefly removes the shared cache; any cluster mid-bootstrap during that window falls through to origins (fine for GKE/homelab, but a kind cluster mid-bootstrap would stall). Do the migration when nothing is bootstrapping.

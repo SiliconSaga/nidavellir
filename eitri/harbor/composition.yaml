@@ -30,6 +30,35 @@ spec:
             name: cluster-identity
 
   # ──────────────────────────────────────────────────────────
+  # Step 0.5: Explicit harbor Namespace, ahead of the namespaced
+  # Objects below (Postgres claim, HTTPRoute, proxy-cache
+  # ConfigMap/Job), so they don't race Helm's own namespace
+  # creation on a fresh cluster.
+  # ──────────────────────────────────────────────────────────
+  - step: deploy-namespace
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ .observed.composite.resource.metadata.name }}-harbor-namespace
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: harbor-namespace
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: harbor
+
+  # ──────────────────────────────────────────────────────────
   # Step 1: Harbor's Postgres — a Mimir PostgreSQLInstance claim,
   # same vending pattern as keycloak/postgres-claim.yaml. Percona's
   # composition yields a ClusterIP Service harbor-postgres:5432 and
@@ -109,6 +138,7 @@ spec:
                 version: "{{ $version }}"
               namespace: harbor
               values:
+                fullnameOverride: harbor
                 expose:
                   type: clusterIP
                   tls:
