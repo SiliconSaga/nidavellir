@@ -232,8 +232,8 @@ Run: `kubectl kustomize components/nidavellir/apps` → Expected: includes the `
 - Consumes: a `local` Harbor on the homelab cluster (Task 6 deploys it there) + the central hub.
 - Produces: the k3s registry mirror config that realizes the `local → central → origin` fallback on homelab nodes.
 
-- [ ] **Step 1: Write `registries.k3s.yaml`** with `mirrors.<upstream>.endpoint` ordered `["https://harbor.homelab.local/v2/<project>", "https://harbor.cmdbee.org/v2/<project>", "https://<origin>"]` for both `xpkg.*`. (Confirm the endpoint path-rewrite against the k3s registry docs for the running k3s version, per the README caveat.)
-- [ ] **Step 2 [HUMAN]: Apply on a homelab node** — place at `/etc/rancher/k3s/registries.yaml`, `systemctl restart k3s`, then `crictl pull xpkg.crossplane.io/crossplane/crossplane:v2.1.4` → returns a digest.
+- [ ] **Step 1: Write `registries.k3s.yaml`** following the k3s section of `containerd/README.md` — host-base `endpoint`s (`https://harbor.homelab.local`, `https://harbor.cmdbee.org`, `https://<origin>`) plus a per-mirror `rewrite` rule for the project path (`crossplane/$1`, `upbound/$1`). **BLOCKED on an unresolved design wrinkle:** a k3s `rewrite` applies to ALL of a mirror's endpoints, so it also prefixes the origin fallback and breaks direct origin pulls — the ordered `local → central → origin` fallback does not work on k3s until this is solved (e.g. drop the origin from the k3s mirror list, or find a per-endpoint rewrite mechanism). Do NOT ship a `registries.k3s.yaml` that silently breaks fallback.
+- [ ] **Step 2 [HUMAN] — contingent on Step 1's fallback resolution: Apply on a homelab node** — place at `/etc/rancher/k3s/registries.yaml`, `systemctl restart k3s`, then `crictl pull xpkg.crossplane.io/crossplane/crossplane:v2.1.4` → returns a digest. Only run once the rewrite/fallback wrinkle above has a verified workaround.
 - [ ] **Step 3: Commit.** `ws commit nidavellir` — `feat(eitri): k3s registries.yaml client redirect`.
 
 ### Task 9: Live kuttl test for the composition

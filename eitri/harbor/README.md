@@ -22,7 +22,7 @@ Prerequisites: a kubectl/helm context for the target cluster; a `*.<domain>` wil
 5. Confirm the front Service name: `ws k8s get svc -n harbor` → `harbor` (port 80); if different, fix `httproute.yaml`'s backendRef.
 6. Expose: `ws k8s apply -f httproute.yaml`
 7. Verify: `curl -fsS https://harbor.cmdbee.org/api/v2.0/health` → `"status":"healthy"`.
-8. Proxy-cache projects: `HARBOR_ADMIN_PW=<pw> bash setup-proxy-cache.sh`
+8. Proxy-cache projects: `bash setup-proxy-cache.sh` (uses the `HARBOR_ADMIN_PW` you exported above)
 9. Verify a pull-through: `docker pull harbor.cmdbee.org/crossplane/crossplane/crossplane:v2.1.4` → succeeds (Harbor fetches it from `xpkg.crossplane.io` and caches it).
 
 Point client clusters at the cache via `containerd/README.md`.
