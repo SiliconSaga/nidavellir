@@ -273,13 +273,25 @@ spec:
           {{- $role := $identity.harborRole -}}
           {{- $central := $identity.harborCentral -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
+          {{- if and (ne $role "central") (ne $role "local") -}}
+          {{ fail "cluster-identity harborRole must be 'central' or 'local'" }}
+          {{- end -}}
+          {{- if and (eq $role "local") (not $central) -}}
+          {{ fail "harborRole=local requires harborCentral in cluster-identity" }}
+          {{- end -}}
           {{- $mirrors := "" -}}
           {{- if eq $role "central" -}}
           {{- $mirrors = "crossplane docker-registry https://xpkg.crossplane.io\nupbound docker-registry https://xpkg.upbound.io\nquay docker-registry https://quay.io\nghcr docker-registry https://ghcr.io\ndockerhub docker-hub https://hub.docker.com" -}}
           {{- else -}}
           {{- $mirrors = printf "crossplane docker-registry https://%s\nupbound docker-registry https://%s\nquay docker-registry https://%s\nghcr docker-registry https://%s\ndockerhub docker-registry https://%s" $central $central $central $central $central -}}
           {{- end -}}
-          {{- $jobSuffix := (printf "%s|%s|%s" $role $mirrors $central) | sha256sum | trunc 10 -}}
+          {{/* $scriptVersion is a manual cache-buster: the embedded setup-proxy-cache.sh
+               script below isn't itself hashed, so this date-stamped constant stands in
+               for its content. Bump it whenever that script's logic changes (e.g. the
+               health-check loop), or a stale Job (immutable, keyed on $jobSuffix) will
+               keep its old name and never re-run with the new script. */}}
+          {{- $scriptVersion := "2026-07-10" -}}
+          {{- $jobSuffix := (printf "%s|%s|%s|%s" $role $mirrors $central $scriptVersion) | sha256sum | trunc 10 -}}
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object
           metadata:
@@ -327,6 +339,12 @@ spec:
                       exit 1
                     fi
                     fails=0
+                    # Known limitation: this is create-idempotent only (2xx = created,
+                    # 409 = already exists = ok). It does NOT reconcile an existing
+                    # registry/project whose upstream URL, adapter type, or registry
+                    # binding has since changed — a 409 short-circuits without checking
+                    # for drift. Detecting and updating that would need a GET-then-PUT
+                    # (or delete-then-recreate) path; deferred as Phase-2 hardening.
                     ok() { case "$1" in 2*|409) return 0 ;; *) return 1 ;; esac; }
                     while read -r name type url; do
                       [ -z "$name" ] && continue
@@ -383,7 +401,7 @@ spec:
                             - name: HARBOR_ADMIN_PW
                               valueFrom:
                                 secretKeyRef:
-                                  name: harbor-core
+                                  name: harbor-admin
                                   key: HARBOR_ADMIN_PASSWORD
                             - name: MIRRORS
                               value: |

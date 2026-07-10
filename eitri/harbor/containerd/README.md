@@ -34,25 +34,31 @@ kubectl rollout restart deployment/<affected-deployment> -n crossplane
 
 ## k3s (Rancher Desktop, pure k3s, k3d)
 
-k3s does **not** read `certs.d` directly — it owns `/etc/rancher/k3s/registries.yaml` and generates the containerd mirror config from it. So on any k3s cluster (Rancher Desktop and a plain k3s install alike) you translate the same mapping into `registries.yaml` rather than copying the `hosts.toml`:
+k3s does **not** read `certs.d` directly — it owns `/etc/rancher/k3s/registries.yaml` and generates the containerd mirror config from it. So on any k3s cluster (Rancher Desktop and a plain k3s install alike) you translate the same mapping into `registries.yaml` rather than copying the `hosts.toml`. Two things differ from the `certs.d` form above: in `registries.yaml`, `endpoint` is a **host base** — not a `hosts.toml`-style URL with the project path baked in — and the `/v2/crossplane`, `/v2/upbound` path prefixes are instead applied with a k3s `rewrite` rule per mirror:
 
 ```yaml
 mirrors:
   xpkg.crossplane.io:
     endpoint:
-      - "https://harbor.<domain>/v2/crossplane"       # local mirror
-      - "https://harbor.cmdbee.org/v2/crossplane"     # central cache
-      - "https://xpkg.crossplane.io"                  # upstream origin
+      - "https://harbor.<domain>"       # local mirror
+      - "https://harbor.cmdbee.org"     # central cache
+      - "https://xpkg.crossplane.io"    # upstream origin
+    rewrite:
+      "(.*)": "crossplane/$1"
   xpkg.upbound.io:
     endpoint:
-      - "https://harbor.<domain>/v2/upbound"          # local mirror
-      - "https://harbor.cmdbee.org/v2/upbound"        # central cache
-      - "https://xpkg.upbound.io"                     # upstream origin
+      - "https://harbor.<domain>"       # local mirror
+      - "https://harbor.cmdbee.org"     # central cache
+      - "https://xpkg.upbound.io"       # upstream origin
+    rewrite:
+      "(.*)": "upbound/$1"
 ```
 
 List each registry's endpoints in that order — local mirror, then central cache, then upstream origin — so a pull falls back local → central → origin: if the local Harbor hasn't cached an image yet (or is still bootstrapping), the pull tries the central cache next, and only hits the true origin as a last resort.
 
-Write that on each node and restart k3s (`systemctl restart k3s` on a server, `k3s-agent` on an agent). k3s turns it into the same `certs.d` hosts.toml under the hood; confirm the endpoint path-rewrite behavior against the k3s registry docs for your version.
+**Known wrinkle, not yet resolved:** a k3s `rewrite` applies to *every* endpoint listed under that mirror, not just the Harbor ones. So the `crossplane/$1` rewrite above would also get applied to the `xpkg.crossplane.io` origin fallback, requesting `xpkg.crossplane.io/crossplane/...` — which doesn't exist upstream and breaks the fallback. The form above is honest about the mapping Harbor needs, but not yet a working three-tier fallback under k3s. Until this is worked out, one of two things has to give: drop the upstream origin from the k3s mirror list (lose the last-resort fallback), or find another way to project-prefix only the Harbor endpoints. Left as a Phase-2/3 detail for when k3s support is actually implemented — don't treat the snippet above as a drop-in working config yet.
+
+Write that on each node and restart k3s (`systemctl restart k3s` on a server, `systemctl restart k3s-agent` on an agent). k3s turns it into the same `certs.d` hosts.toml under the hood; confirm the endpoint path-rewrite behavior against the k3s registry docs for your version.
 
 ## GKE / managed nodes
 

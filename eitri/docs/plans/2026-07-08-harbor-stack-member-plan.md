@@ -161,8 +161,8 @@ Expected: the output now also contains a `PostgreSQLInstance` `harbor-postgres`,
 
 - [ ] **Step 1: Template the proxy-cache setup by role.** In the composition, render a `Job` (image with `curl`+`jq`, e.g. the Harbor `core` or a small tools image) that runs the `setup-proxy-cache.sh` logic against the in-cluster Harbor. Drive its registry list from `$role`:
   - `central`: the five origin registries (`xpkg.crossplane.io`, `xpkg.upbound.io`, `quay.io`, `ghcr.io`, `docker.io`) as `docker-registry`/`docker-hub` proxy projects.
-  - `local`: a single `docker-registry` proxy project whose URL is `https://{{ $identity.harborCentral }}`.
-  Pass `HARBOR_ADMIN_PW` from the Harbor admin secret the chart creates (mount it, don't inline).
+  - `local`: the same five same-named proxy projects (`crossplane`, `upbound`, `quay`, `ghcr`, `dockerhub`) as `docker-registry` type, all URLed at `https://{{ $identity.harborCentral }}` (chaining local → central → origin).
+  Pass `HARBOR_ADMIN_PW` from the externally-managed `harbor-admin` Secret (via `existingSecretAdminPassword` on the Release — see Task 6's ESO/OpenBao prerequisite), not the chart-generated `harbor-core` Secret; mount it, don't inline.
 
 - [ ] **Step 2: Write the homelab render fixture** (`tests/render/cluster-identity-homelab.yaml`) as specified in Files.
 
@@ -172,7 +172,7 @@ Run (central): the Task 3 render command with `-e .../cluster-identity-gke.yaml`
 Expected: the setup Job configures the five origin proxy projects; `externalURL: https://harbor.cmdbee.org`; `storageClass: standard-rwo`.
 
 Run (local): the same command with `-e components/nidavellir/eitri/harbor/tests/render/cluster-identity-homelab.yaml`.
-Expected: the setup Job configures ONE proxy project pointed at `https://harbor.cmdbee.org`; `externalURL: https://harbor.homelab.local`; `storageClass: local-path`.
+Expected: the setup Job configures the SAME FIVE same-named proxy-cache projects (`crossplane`, `upbound`, `quay`, `ghcr`, `dockerhub`), all pointed at `https://harbor.cmdbee.org`; `externalURL: https://harbor.homelab.local`; `storageClass: local-path`.
 
 - [ ] **Step 4: Commit.** `ws commit nidavellir` — `feat(eitri): role-driven proxy-cache (central origins vs local→central)`.
 
@@ -192,6 +192,8 @@ Expected: the setup Job configures ONE proxy project pointed at `https://harbor.
 **Interfaces:**
 - Consumes: the composition + XRD (Phase 1); the `PostgreSQLInstance` XRD from Mimir.
 - Produces: an ArgoCD `Application` that installs the Harbor XRD/composition/claim, with a sync-wave placing it **after** Mimir (Percona operator + `PostgreSQLInstance` CRD present). One claim; role resolves per-cluster from cluster-identity.
+
+> **Prerequisite: `harbor/harbor-admin` Secret.** The Release's `existingSecretAdminPassword: harbor-admin` (composition Step 2) references a Secret the Harbor chart does **not** create — it must be provisioned out-of-band by ESO/OpenBao (the stack's secret pattern) before this app syncs. Without it, both the Harbor `Release` (chart install fails to resolve the admin password source) and the proxy-cache `Job` (which reads `HARBOR_ADMIN_PW` from the same Secret) cannot become Ready. Sequence the ESO `ExternalSecret`/OpenBao path ahead of — or at minimum alongside — this app's sync-wave.
 
 - [ ] **Step 1: Read the ordering pattern.** Read `components/nidavellir/apps/keycloak-app.yaml` (or whichever app depends on Mimir Postgres) for the sync-wave value used to land after Mimir, and `apps/kustomization.yaml` for how apps are registered.
 
