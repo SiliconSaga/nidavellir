@@ -1,0 +1,50 @@
+# ArgoCD Application for Harbor — the pull-through cache registry (Eitri sub-component).
+#
+# Deploys the XHarbor XRD + Composition + HarborInstance claim from the
+# nidavellir repo's eitri/harbor/ directory. Env-aware via cluster-identity
+# (role central|local, ingress domain, storageClass); Postgres vended from
+# Mimir. The composition emits the Harbor Helm Release, the HTTPRoute, the
+# Percona PostgreSQLInstance claim, and the role-driven proxy-cache Job.
+#
+# directory.include selects ONLY the GitOps manifests. The other files in
+# eitri/harbor/ (values.yaml, httproute.yaml, setup-proxy-cache.sh, containerd/)
+# are composition INPUTS — embedded into the composition template, not
+# standalone resources to apply (the composition emits the HTTPRoute itself).
+#
+# Sync-wave 13: after Mimir (wave 6 — the Percona operator + PostgreSQLInstance
+# CRD the vended DB claim needs) and after ESO + OpenBao (waves 9/10 — the
+# harbor-admin Secret is provisioned out-of-band via ESO/OpenBao; until it
+# exists the Release + proxy-cache Job stay Not Ready). SkipDryRunOnMissingResource
+# covers the first-sync race where the XHarbor CRD is still establishing.
+#
+# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
+# is stable, swap repoURL to GitHub per the transition procedure.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "13"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
+    targetRevision: HEAD
+    path: eitri/harbor
+    directory:
+      recurse: false
+      include: '{xrd.yaml,composition.yaml,claim.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true

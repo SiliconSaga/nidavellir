@@ -1,0 +1,16 @@
+# The single HarborInstance claim for this cluster.
+#
+# Harbor is a singleton per cluster: the composition pins the `harbor`
+# namespace + Service names and reads role (central|local), domain, and
+# storageClass from the cluster-identity EnvironmentConfig — so this claim
+# carries only the two tunables. One claim ships everywhere; the role
+# resolves per-cluster from cluster-identity, no per-cluster divergence.
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: HarborInstance
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  parameters:
+    chartVersion: "1.16.0"   # Harbor Helm chart (https://helm.goharbor.io); confirm before release
+    registrySize: "100Gi"    # proxy-cache blob PVC
