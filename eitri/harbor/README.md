@@ -38,7 +38,7 @@ Point client clusters at the cache via `containerd/README.md`.
 - **Proxy-cache:** each upstream is a Harbor *registry endpoint* plus a *public project* in proxy-cache mode. A pull to `harbor.<domain>/<project>/<repo>` is served from cache, or fetched from the origin and cached on the way through. Anonymous pull works because the projects are public.
 - **Hostname is instance config.** `values.yaml` (`externalURL`), `httproute.yaml` (hostname), and the `containerd/` `hosts.toml` all name this instance's `harbor.cmdbee.org`; a different instance changes those three in step.
 - **Admin password** lives in the workspace `.env` (gitignored) for this direct-`helm` path. Under the composition, it instead comes from the externally-managed `harbor-admin` Secret (ESO/OpenBao) — never in git (see "Admin secret" below).
-- Deployed here as a direct `helm install`.
+- **Deployment path:** this instance currently runs via the direct-`helm` steps above; the GitOps composition path (the `HarborInstance` claim + the `harbor` ArgoCD app) supersedes it once synced.
 
 ## Admin secret (composition path)
 
