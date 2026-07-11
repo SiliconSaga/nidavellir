@@ -3,8 +3,11 @@
 Public-read Harbor, fronted by the shared Traefik Gateway, proxy-caching the stack's upstream registries (`xpkg.crossplane.io`, `xpkg.upbound.io`, `quay.io`, `ghcr.io`, `docker.io`). A cluster whose container runtime can't reach an upstream directly — or that just wants insulation from upstream outages/rate-limits — pulls through Harbor instead, with no registry auth (the projects are public-read).
 
 Files here:
-- `values.yaml` — Harbor Helm values (clusterIP, trimmed to proxy-cache only — no Trivy/Notary/metrics).
-- `httproute.yaml` — Gateway-API route exposing Harbor on the shared Traefik Gateway.
+- `xrd.yaml` / `composition.yaml` — the `XHarbor` XRD + composition (the GitOps path: env-aware Release + HTTPRoute + vended Postgres + role-driven proxy-cache, all from cluster-identity).
+- `claim.yaml` — the singleton `HarborInstance` claim (chart version + registry size; role/domain/storageClass come from cluster-identity).
+- `externalsecret.yaml` — materializes the `harbor-admin` Secret from OpenBao via ESO (see "Admin secret" below).
+- `values.yaml` — Harbor Helm values (clusterIP, trimmed to proxy-cache only — no Trivy/Notary/metrics). Composition input, embedded into the composition template.
+- `httproute.yaml` — Gateway-API route exposing Harbor on the shared Traefik Gateway. Composition input; the composition emits its own HTTPRoute.
 - `setup-proxy-cache.sh` — creates the public proxy-cache projects (one per upstream) via the Harbor API.
 - `containerd/` — client-side mirror config to point a cluster's nodes at Harbor (see `containerd/README.md`).
 
@@ -34,5 +37,26 @@ Point client clusters at the cache via `containerd/README.md`.
 - **Exposure:** Harbor runs as `clusterIP` and its own nginx front proxy handles `/v2/`, `/api/`, `/`; the shared Traefik Gateway routes `harbor.<domain>` to it via `httproute.yaml`. TLS terminates at the Gateway on the `*.<domain>` wildcard cert, so Harbor itself speaks plain HTTP inside the cluster.
 - **Proxy-cache:** each upstream is a Harbor *registry endpoint* plus a *public project* in proxy-cache mode. A pull to `harbor.<domain>/<project>/<repo>` is served from cache, or fetched from the origin and cached on the way through. Anonymous pull works because the projects are public.
 - **Hostname is instance config.** `values.yaml` (`externalURL`), `httproute.yaml` (hostname), and the `containerd/` `hosts.toml` all name this instance's `harbor.cmdbee.org`; a different instance changes those three in step.
-- **Admin password** lives in the workspace `.env` (gitignored) for this direct-`helm` path. Under the composition, it instead comes from the externally-managed `harbor-admin` Secret (ESO/OpenBao) — never in git.
-- Deployed here as a direct `helm install`.
+- **Admin password** lives in the workspace `.env` (gitignored) for this direct-`helm` path. Under the composition, it instead comes from the externally-managed `harbor-admin` Secret (ESO/OpenBao) — never in git (see "Admin secret" below).
+- **Deployment path:** this instance currently runs via the direct-`helm` steps above; the GitOps composition path (the `HarborInstance` claim + the `harbor` ArgoCD app) supersedes it once synced.
+
+## Admin secret (composition path)
+
+Under GitOps the chart reads the admin password from a `harbor-admin` Secret
+(`existingSecretAdminPassword`), and the proxy-cache Job reads the same Secret —
+neither uses the chart-generated `harbor-core` Secret. `externalsecret.yaml`
+materializes `harbor-admin` from OpenBao via ESO; the password is **born in
+OpenBao** and never committed. One-time seed per cluster (operator, at/after
+OpenBao init — full context in `docs/secrets-management.md`):
+
+```bash
+ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
+kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" \
+  bao kv put secret/harbor HARBOR_ADMIN_PASSWORD=<generated-strong-password>
+```
+
+The `harbor` ArgoCD app syncs this ExternalSecret alongside the XRD/composition/
+claim at sync-wave 13 (after ESO + OpenBao). Until the value is seeded the
+ExternalSecret reports `SecretSyncedError` and Harbor stays Not Ready — that gate
+is expected. Verify: `kubectl get externalsecret harbor-admin -n harbor` →
+`SecretSynced`.
