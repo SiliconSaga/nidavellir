@@ -6,15 +6,17 @@
 # Mimir. The composition emits the Harbor Helm Release, the HTTPRoute, the
 # Percona PostgreSQLInstance claim, and the role-driven proxy-cache Job.
 #
-# directory.include selects ONLY the GitOps manifests. The other files in
-# eitri/harbor/ (values.yaml, httproute.yaml, setup-proxy-cache.sh, containerd/)
-# are composition INPUTS — embedded into the composition template, not
-# standalone resources to apply (the composition emits the HTTPRoute itself).
+# directory.include selects ONLY the GitOps manifests (XRD + composition +
+# claim + the harbor-admin ExternalSecret). The other files in eitri/harbor/
+# (values.yaml, httproute.yaml, setup-proxy-cache.sh, containerd/) are
+# composition INPUTS — embedded into the composition template, not standalone
+# resources to apply (the composition emits the HTTPRoute itself).
 #
 # Sync-wave 13: after Mimir (wave 6 — the Percona operator + PostgreSQLInstance
 # CRD the vended DB claim needs) and after ESO + OpenBao (waves 9/10 — the
-# harbor-admin Secret is provisioned out-of-band via ESO/OpenBao; until it
-# exists the Release + proxy-cache Job stay Not Ready). SkipDryRunOnMissingResource
+# harbor-admin Secret is materialized by the ExternalSecret here from an
+# OpenBao-seeded value; until that value is seeded the ExternalSecret errors and
+# the Release + proxy-cache Job stay Not Ready). SkipDryRunOnMissingResource
 # covers the first-sync race where the XHarbor CRD is still establishing.
 #
 # Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
@@ -36,7 +38,7 @@ spec:
     path: eitri/harbor
     directory:
       recurse: false
-      include: '{xrd.yaml,composition.yaml,claim.yaml}'
+      include: '{xrd.yaml,composition.yaml,claim.yaml,externalsecret.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: harbor
