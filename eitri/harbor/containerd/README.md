@@ -68,4 +68,5 @@ Where you *do* want the proxy-cache used on GKE, pin the stack's own image refer
 
 ## Windows / Git Bash
 
-`docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands fail with "No such file or directory". Prefix them with `MSYS_NO_PATHCONV=1` (the helper script does this) or wrap the in-container command in `sh -c '...'`.
+`docker exec`/`docker cp` rewrite in-container absolute paths like `/etc/containerd/certs.d/...` into `C:/Program Files/Git/etc/...` (MSYS path conversion), so the manual commands above fail with "No such file or directory". Run them via `ws docker …` (the workspace wrapper scopes `MSYS_NO_PATHCONV=1` to that one call; the helper script already handles this) or wrap the in-container command in `sh -c '...'`.
+## k3s (homelab Rancher Desktop) — phase 3

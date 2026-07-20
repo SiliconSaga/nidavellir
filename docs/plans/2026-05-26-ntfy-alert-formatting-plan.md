@@ -78,11 +78,11 @@ volume (under `volumes:`):
 
 - [ ] **Step 4: Verify the template renders correctly** with a throwaway local ntfy (the template logic, independent of k8s). Extract the `heimdall.yml` data into `.tmp/ntfy-templates/heimdall.yml` and POST a sample AlertManager payload (`.tmp/am-sample.json` — a v4 webhook with `commonLabels.severity: critical` and an `alerts[]` entry):
 ```bash
-docker run -d --name ntfy-tpl -p 8099:80 binwiederhier/ntfy:v2.23.0 serve
-MSYS_NO_PATHCONV=1 docker cp .tmp/ntfy-templates/heimdall.yml ntfy-tpl:/etc/ntfy/templates/heimdall.yml
-docker restart ntfy-tpl
+ws docker run -d --name ntfy-tpl -p 8099:80 binwiederhier/ntfy:v2.23.0 serve
+ws docker cp .tmp/ntfy-templates/heimdall.yml ntfy-tpl:/etc/ntfy/templates/heimdall.yml
+ws docker restart ntfy-tpl
 curl -sS --retry 5 --retry-all-errors -X POST --data-binary @.tmp/am-sample.json "http://localhost:8099/t?template=heimdall"
-docker rm -f ntfy-tpl
+ws docker rm -f ntfy-tpl
 ```
 Expected: the response JSON shows `"priority":5`, a formatted `title`, and a `message` built from `alerts[]`. (Already confirmed once during brainstorming; re-run if the template content changed.)
 
