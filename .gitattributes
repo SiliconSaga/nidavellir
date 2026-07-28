@@ -1,3 +1,10 @@
+# Normalize all text files to LF in the index *and* the working tree, so the
+# repo — not each machine's core.autocrlf — is authoritative. Everything here is
+# already stored LF; this stops Windows checkouts from smudging to CRLF and then
+# showing perpetually-"modified" files. Binary files are auto-detected and left
+# untouched.
+* text=auto eol=lf
+
 # Shell scripts must stay LF — CRLF breaks the shebang/sourcing on Linux nodes
 # and in-container execution, even when checked out on Windows (autocrlf).
 *.sh text eol=lf
