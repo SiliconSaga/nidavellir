@@ -6,5 +6,5 @@ metadata:
 data:
   heimdall.yml: |
     title: "{{.commonLabels.alertname}} [{{.status}}]"
-    message: "{{range .alerts}}- {{.annotations.summary}}\n{{end}}"
+    message: "{{range .alerts}}- {{if .annotations.description}}{{.annotations.description}}{{else}}{{.annotations.summary}}{{end}}\n{{end}}"
     priority: "{{if eq .commonLabels.severity \"critical\"}}5{{else if eq .commonLabels.severity \"warning\"}}3{{else}}2{{end}}"
