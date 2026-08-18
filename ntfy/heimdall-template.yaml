@@ -4,7 +4,48 @@ metadata:
   name: ntfy-templates
   namespace: ntfy
 data:
+  # One template per severity tier, each pinned to a fixed ntfy priority, and
+  # each published to its own topic (see heimdall's AlertManager config).
+  #
+  # Priority is set here rather than derived from labels because the tier is
+  # already decided by AlertManager routing — deriving it a second time would
+  # be two sources of truth that can disagree. The topic and the priority move
+  # together or not at all.
+  #
+  # ntfy priorities, and what they actually do on Android:
+  #   2  low      appears in the drawer, no sound, no vibration
+  #   3  default  sound and vibration
+  #   4  high     sound, vibration, and a heads-up popup
+  #   5  max      as 4, and pierces Do Not Disturb
+  #
+  # The per-topic settings in the ntfy app can override all of this, which is
+  # the point of splitting topics — the phone gets the final say per tier.
+
+  # Tier 2 — cluster chatter. Worth being able to scroll through; never worth
+  # a sound. Capacity, saturation, target flapping.
+  heimdall-info.yml: |
+    title: "{{.commonLabels.alertname}} [{{.status}}]"
+    message: "{{range .alerts}}- {{if .annotations.description}}{{.annotations.description}}{{else}}{{.annotations.summary}}{{end}}\n{{end}}"
+    priority: "2"
+
+  # Tier 3 — something should be running and isn't: unschedulable pods,
+  # crashloops, failed jobs, replica mismatches. One level of noise.
+  heimdall-workload.yml: |
+    title: "{{.commonLabels.alertname}} [{{.status}}]"
+    message: "{{range .alerts}}- {{if .annotations.description}}{{.annotations.description}}{{else}}{{.annotations.summary}}{{end}}\n{{end}}"
+    priority: "3"
+
+  # Tier 4 — a named service we explicitly chose to watch is down. Heads-up
+  # popup, but still does NOT pierce Do Not Disturb; 5 stays reserved until
+  # the alerts have earned enough trust to wake someone at 3am.
+  heimdall-watched.yml: |
+    title: "{{.commonLabels.alertname}} [{{.status}}]"
+    message: "{{range .alerts}}- {{if .annotations.description}}{{.annotations.description}}{{else}}{{.annotations.summary}}{{end}}\n{{end}}"
+    priority: "4"
+
+  # Retained so a stale receiver URL still renders rather than failing to
+  # publish. Remove once nothing references ?template=heimdall.
   heimdall.yml: |
     title: "{{.commonLabels.alertname}} [{{.status}}]"
     message: "{{range .alerts}}- {{if .annotations.description}}{{.annotations.description}}{{else}}{{.annotations.summary}}{{end}}\n{{end}}"
-    priority: "{{if eq .commonLabels.severity \"critical\"}}5{{else if eq .commonLabels.severity \"warning\"}}3{{else}}2{{end}}"
+    priority: "{{if eq .commonLabels.severity \"critical\"}}4{{else if eq .commonLabels.severity \"warning\"}}3{{else}}2{{end}}"
