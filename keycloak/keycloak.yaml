@@ -40,10 +40,20 @@ spec:
     httpEnabled: true
   proxy:
     headers: xforwarded
+  # Sized from measurement: 6m CPU p95, 608Mi memory p95.
+  #
+  # The CPU request is a floor rather than the p95, because this is the one
+  # workload where p95 is misleading — it idles near zero but bursts to ~723m
+  # while the JVM warms. Reserving for the burst would hold most of a core
+  # unused almost always; the limit covers the burst instead.
+  #
+  # The 500m ceiling is deliberately BELOW the measured burst, so cold starts
+  # are throttled and therefore slower. Accepted trade rather than an oversight;
+  # revisit if startup ever meets a probe deadline.
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 25m
+      memory: 600Mi
     limits:
-      cpu: "1"
+      cpu: 500m
       memory: 1Gi
