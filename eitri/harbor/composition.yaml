@@ -172,6 +172,10 @@ spec:
                     username: harbor
                     coreDatabase: harbor
                     existingSecret: harbor-postgres-user-secret
+                    # The Percona/Crunchy cluster serves `hostssl` only, so the
+                    # chart's default of `disable` is rejected outright with
+                    # "no pg_hba.conf entry … no encryption" and core crashloops.
+                    sslmode: require
                 # harbor-admin is provisioned out-of-band via ESO/OpenBao (the stack's
                 # secret pattern, Phase-2 wiring) — without this the chart defaults the
                 # admin password to the well-known Harbor12345.
