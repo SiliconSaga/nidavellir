@@ -17,7 +17,7 @@ resources:
   - openbao-app.yaml
   - keycloak-operator-app.yaml
   - keycloak-app.yaml
-  - harbor-app.yaml
+  # harbor-app.yaml     # PARKED 2026-08-18: experimental, its purpose (a one-time image sync) is done, and its external-DB path has never worked. Re-enable with the sslmode fix in eitri/harbor/composition.yaml.
   # vordu-app.yaml       # TODO: add when Vörðu has K8s manifests
   # demicracy-apps.yaml  # TODO: uncomment when Demicracy repo has apps/ dir
 
