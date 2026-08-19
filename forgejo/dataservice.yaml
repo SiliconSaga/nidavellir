@@ -1,0 +1,26 @@
+# Forgejo's database — the first customer of the DataService operator.
+#
+# One resource in Forgejo's own namespace. No cluster, no storage class, no
+# replica count: those are the platform's concerns, and stating them here is
+# what produced a cluster per app in the first place.
+#
+# The operator creates the database and its owning role on the shared cluster
+# and publishes credentials to the Secret named in status.secretName —
+# `forgejo-dataservice` — with keys host, port, database, username, password
+# and uri.
+#
+# No spec.version. Under placement: shared the field is REJECTED rather than
+# ignored: one cluster serves one major version for every tenant, so honouring
+# a per-request version would be a promise the API cannot keep. If Forgejo ever
+# needs its own version, that is what placement: dedicated is for.
+apiVersion: mimir.siliconsaga.org/v1alpha1
+kind: DataService
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  engine: postgres
+  placement: shared
+  # Underscores, not hyphens: this becomes a PostgreSQL identifier, and the CRD
+  # pattern rejects anything that would need quoting.
+  databaseName: forgejo
