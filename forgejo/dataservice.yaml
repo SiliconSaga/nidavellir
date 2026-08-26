@@ -13,6 +13,24 @@
 # ignored: one cluster serves one major version for every tenant, so honouring
 # a per-request version would be a promise the API cannot keep. If Forgejo ever
 # needs its own version, that is what placement: dedicated is for.
+#
+# NOT YET WIRED: nothing applies this directory. Forgejo is a later
+# crystallisation step, deployed once the platform is stable — see
+# docs/plans/2026-08-18-forgejo-cutover-design.md. The namespace is declared
+# here so that whenever an Application does pick this up, the file is
+# self-contained rather than depending on an ordering nobody wrote down.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+  labels:
+    app.kubernetes.io/name: forgejo
+    app.kubernetes.io/part-of: nidavellir
+  annotations:
+    # Ahead of the DataService, which the API server rejects outright if its
+    # namespace does not exist yet.
+    argocd.argoproj.io/sync-wave: "-1"
+---
 apiVersion: mimir.siliconsaga.org/v1alpha1
 kind: DataService
 metadata:
