@@ -20,7 +20,7 @@
 # covers the first-sync race where the XHarbor CRD is still establishing.
 #
 # Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
-# is stable, swap repoURL to GitHub per the transition procedure.
+# is stable, repoURL moves to FORGEJO per the cutover design, not GitHub.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

@@ -5,8 +5,14 @@ kind: Kustomization
 # ArgoCD scans this directory via the nidavellir-apps Application in Nordri.
 #
 # Add a new Application here when onboarding a new platform component.
-# Each Application should use the internal Gitea URL during bootstrap;
-# swap to GitHub per the transition procedure in vegvisir/README.md.
+# Each Application should use the internal Gitea URL.
+#
+# The eventual destination is FORGEJO, not GitHub. The older guidance here
+# pointed at a GitHub transition, which is superseded by
+# docs/plans/2026-08-18-forgejo-cutover-design.md: the seed Gitea serves the
+# whole bootstrap, Forgejo is crystallised later once the platform is stable,
+# and repoURLs move to Forgejo at that point. GitHub stays the push-mirror
+# target and the off-cluster copy, not a repoURL these Applications read.
 resources:
   - vegvisir-app.yaml
   - mimir-app.yaml

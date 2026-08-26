@@ -171,12 +171,24 @@ already covers you. A per-host cert is only needed for a hostname *outside*
 `cmdbee.org`, which is its own design question — see `docs/tls-and-certificates.md`
 and [SiliconSaga/yggdrasil#65](https://github.com/SiliconSaga/yggdrasil/issues/65).
 
-## Transitioning to GitHub
+## Repository cutover
+
+> **The destination is Forgejo, not GitHub.** This section originally described moving
+> `repoURL` to GitHub, which is superseded by
+> [`docs/plans/2026-08-18-forgejo-cutover-design.md`](../docs/plans/2026-08-18-forgejo-cutover-design.md).
+>
+> The seed Gitea serves the whole bootstrap. Forgejo is crystallised later, once the
+> platform is stable, and `repoURL`s move there. **GitHub becomes the push-mirror
+> target** — an off-cluster copy and the recovery source — rather than something these
+> Applications read. Pointing at GitHub would also cost the local-branch testing loop
+> the seed exists to provide, since only an in-cluster host can serve unpushed work.
+>
+> The mechanics below are still accurate for *how* to repoint an Application and add a
+> repository credential. Substitute the Forgejo host for the GitHub URL.
 
 During bootstrap, ArgoCD pulls Nidavellir from the internal Gitea mirror (same as Nordri).
-Once the cluster is stable and Vegvísir is healthy, you can transition ArgoCD to pull
-future updates directly from the GitHub source — so a push to GitHub is all you need for
-ongoing GitOps.
+Once the cluster is stable and Vegvísir is healthy, ArgoCD is repointed at the durable
+in-cluster host so ongoing GitOps no longer depends on the ephemeral seed.
 
 ### Step 1: Add GitHub credentials to ArgoCD
 

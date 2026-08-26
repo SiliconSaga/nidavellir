@@ -80,7 +80,17 @@ spec:
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
                     auth-access:
-                      - "everyone:heimdall-alerts:rw"
+                      # Wildcard rather than one entry per topic. Heimdall now
+                      # publishes to a topic per severity tier, and naming them
+                      # individually means the phone silently gets a credential
+                      # prompt every time a tier is added — which is exactly how
+                      # this was discovered.
+                      #
+                      # The real boundary is the network: base-url is a tailnet
+                      # address, so reaching the server at all requires being on
+                      # the tailnet. This grant is the same posture the single
+                      # heimdall-alerts entry already had, just not brittle.
+                      - "everyone:heimdall-*:rw"
                     cache-file: "/var/lib/ntfy/cache.db"
                     behind-proxy: true
           ---

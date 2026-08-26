@@ -99,10 +99,12 @@ Auth is **declarative**, set in `server.yml` by the composition — no manual `n
 
 ```yaml
 auth-access:
-  - "everyone:heimdall-alerts:rw"
+  - "everyone:heimdall-*:rw"
 ```
 
-— lets anonymous clients publish and subscribe to `heimdall-alerts` only (verified against ntfy v2.23.0: the `everyone` identifier and `rw` code work; an anonymous publish to `heimdall-alerts` returns 200, any other topic 403). AlertManager and the phone both connect anonymously. The **tailnet remains the network perimeter** — only tailnet members reach port 80 (per the `tag:ntfy` ACL grant), so anonymous-but-tailnet-gated is the intended model; every other topic stays denied.
+— lets anonymous clients publish and subscribe to the whole `heimdall-*` topic namespace (verified against ntfy v2.23.0: the `everyone` identifier and `rw` code work; an anonymous publish to a `heimdall-` topic returns 200, any other topic 403). AlertManager and the phone both connect anonymously. The **tailnet remains the network perimeter** — only tailnet members reach port 80 (per the `tag:ntfy` ACL grant), so anonymous-but-tailnet-gated is the intended model; every topic outside the prefix stays denied.
+
+The grant is a **wildcard rather than a single topic** because alerts route by function across `heimdall-info`, `heimdall-workload` and `heimdall-watched`. Naming each one individually meant that adding a tier silently produced a topic the phone could not subscribe to — which presents as "ntfy asks for a username and password" rather than as a missing grant.
 
 ## Device naming
 
