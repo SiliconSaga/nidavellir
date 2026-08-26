@@ -21,8 +21,8 @@
 # Gateway resource is applied. ArgoCD self-heals if Traefik is not yet ready.
 #
 # Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
-# is stable, swap repoURL to GitHub and add an ArgoCD repository credential Secret.
-# See "Transitioning to GitHub" in vegvisir/README.md.
+# is stable, repoURL moves to FORGEJO — not GitHub. See "Repository cutover"
+# in vegvisir/README.md and docs/plans/2026-08-18-forgejo-cutover-design.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

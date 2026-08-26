@@ -12,7 +12,7 @@
 # when the Demicracy repo is ready to be managed via GitOps.
 #
 # Source: internal Gitea during bootstrap (bootstrap.sh must mirror demicracy repo).
-# Swap to GitHub URL using the same transition procedure as Vegvísir.
+# repoURL moves to FORGEJO using the same procedure as Vegvísir — not GitHub.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
