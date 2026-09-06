@@ -1,0 +1,30 @@
+# Keycloak's database — a tenant on Mimir's shared Postgres, replacing the
+# PostgreSQLInstance claim that used to provision a whole Percona cluster here
+# (2026-09-06). Ting and Keycloak were the legacy claim path's only two users;
+# with Ting deleted and this migrated, nothing uses it.
+#
+# The operator creates the database and its owning role on the shared cluster
+# and publishes credentials to status.secretName — `keycloak-db-dataservice` —
+# with keys host, port, database, username, password and uri.
+#
+# No spec.version: under placement: shared it is REJECTED rather than ignored,
+# because one cluster serves one major version for every tenant. The old claim
+# asked for "15"; the shared cluster's version is the platform's concern now.
+# Likewise no storageSize or replicas.
+#
+# NOT APPLIED YET. The keycloak Application's automated sync is disabled while
+# Keycloak is suspended (see apps/keycloak-app.yaml), so this file is
+# declarative intent until the app is resumed and synced. That ordering is
+# deliberate: resuming should provision a fresh empty database rather than
+# leave one sitting on the shared cluster in the meantime.
+apiVersion: mimir.siliconsaga.org/v1alpha1
+kind: DataService
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  engine: postgres
+  placement: shared
+  # Underscores, not hyphens: this becomes a PostgreSQL identifier, and the CRD
+  # pattern rejects anything that would need quoting.
+  databaseName: keycloak
