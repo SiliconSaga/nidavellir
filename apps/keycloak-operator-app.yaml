@@ -34,9 +34,22 @@ spec:
     server: https://kubernetes.default.svc
     namespace: keycloak
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+    # SUSPENDED 2026-09-06. Keycloak is not in use yet, and this operator was
+    # the single largest block of reserved-and-idle CPU in the cluster: 300m
+    # requested against a 12-14m steady state (see heimdall
+    # docs/observations/rightsizing.md). The Deployment is scaled to 0
+    # alongside this change.
+    #
+    # Disabling automation rather than removing the Application is deliberate.
+    # The app carries a resources-finalizer, and the parent nidavellir app
+    # syncs apps/ with prune: true — so deleting or unlisting this file would
+    # cascade-delete the CRDs and the Keycloak resources rather than park them.
+    # Left as-is, the Application and CRDs stay put and nothing reconciles.
+    #
+    # To resume: restore the automated block and scale the operator back to 1.
+    # automated:
+    #   prune: true
+    #   selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true

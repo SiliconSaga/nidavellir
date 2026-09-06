@@ -32,9 +32,20 @@ spec:
     server: https://kubernetes.default.svc
     namespace: keycloak
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+    # SUSPENDED 2026-09-06, with the operator app. The Keycloak StatefulSet is
+    # scaled to 0; with the operator also down, nothing reconciles it back.
+    #
+    # The Postgres claim and the HTTPRoute in keycloak/ are deliberately left
+    # in place: the realm data stays on its PVC and keycloak.cmdbee.org keeps
+    # resolving, so resuming is a scale-up rather than a re-provision. That
+    # also keeps the claim — one of only two users of the legacy Mimir
+    # PostgreSQLInstance path — available for the eventual DataService move.
+    #
+    # To resume: restore the automated block here and on the operator app,
+    # scale the operator to 1, and let it reconcile the Keycloak CR.
+    # automated:
+    #   prune: true
+    #   selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
