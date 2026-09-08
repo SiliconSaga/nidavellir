@@ -39,15 +39,15 @@ The lifecycle, and when each step happens:
 | Step | Happens | What it does |
 |---|---|---|
 | **init** | ONCE per OpenBao instance, ever | Generates the master key, splits it into the 3 shares, creates the **root token** (the initial all-powerful login). If you re-init, the old data is gone — init is creation, not login. |
-| **unseal** | After EVERY process start (first boot, pod restart, node reboot) | Submit 2 of the 3 shares. Until then the pod runs but stays **NotReady** — our readiness probe deliberately gates on seal status. |
+| **unseal** | Automatic after every process start (ADR 0004): gke unwraps the barrier key through Cloud KMS via Workload Identity, homelab through a static key in Secret `openbao-seal-key`. Manual only on a cluster that set `parameters.seal: shamir`. | Until unsealed the pod runs but stays **NotReady** — readiness gates on seal status, so a pod that stays NotReady after a restart is the signal that the seal prerequisites are broken, not that someone forgot a step. |
 | **login/use** | Continuously | Normal API operations with tokens (the root token, or scoped tokens like ESO's k8s-auth-issued one). |
 
 Practical consequences worth internalizing:
 
-- **A restarted OpenBao pod comes back sealed. Always.** It is not broken; it is waiting for an operator. `0/1 Running` on `openbao-0` after a restart means "unseal me" (runbook below).
+- **A restarted OpenBao pod unseals itself.** If it stays `0/1` after a restart, the seal backend is unreachable: on gke check the KSA annotation and the KMS IAM (`./gke-provision.sh openbao-seal-setup` repairs both), on homelab check that Secret `openbao-seal-key` exists. `bao status` says `Sealed true` with `Seal Type gcpckms`/`static` in that case; a `Seal Type shamir` means the seal migration below never ran.
 - **Sealed ≠ stopped.** The API answers (`bao status` works) but reads/writes fail. ESO's store will show not-ready, ExternalSecrets stop refreshing — already-materialized Kubernetes Secrets keep working, since they're copies.
 - **The root token is a login credential, not the encryption key.** Losing unseal shares = data unrecoverable. Losing the root token while unsealed = recoverable (you can generate a new root with the shares).
-- This manual dance can be replaced with **KMS auto-unseal** (cloud key service holds the master key). That's deliberately deferred — see "Custody posture" below.
+- The Shamir shares from init did not disappear: after migration they are **recovery keys**, needed for `bao operator generate-root` and for `-migrate`-ing back to Shamir. Keep them where they were.
 
 ## What's deployed (the substrate shape)
 
@@ -67,7 +67,7 @@ This substrate runs the **minimal unseal posture** (ADR 0002). The init output �
 
 - **homelab (staging, resettable):** in-cluster custody only. If everything is lost, wipe and re-init — nothing of value is at stake.
 - **GKE (live):** the same Secret exists for operational convenience, but the unseal shares and root token ALSO go into the operator's password manager at init time, BEFORE the in-cluster copy is created. If the cluster eats the Secret, you can still unseal.
-- **Hardening phase (future):** GCP KMS auto-unseal replaces the manual flow and retires the parked shares entirely.
+- **Auto-unseal (ADR 0004, landed with the Forgejo day-2 Phase 1):** gke holds the barrier key in Cloud KMS, reached through Workload Identity; homelab holds a static key in Secret `openbao-seal-key`. The parked `openbao-init` material remains the recovery keys and root token. The homelab posture is honest about being homelab: anyone who can read Secrets in `openbao` can unseal, exactly as before, but nobody has to.
 
 ### Security limitations (read these before reusing the pattern anywhere serious)
 
@@ -76,7 +76,7 @@ Spelled out so nobody has to infer severity from the narrative above:
 - **Anyone who can read Secrets in the `openbao` namespace owns the whole substrate.** The parked `root_token` grants unrestricted OpenBao operations (read everything, rewrite policies, reconfigure auth), and the parked unseal shares let them unseal after any restart — which defeats the multi-party control that Shamir splitting exists to provide. The live-env password-manager copy mitigates *key loss*, not this *exposure*.
 - **Secret values cross the cluster network in plaintext.** The listener runs `tls_disable = 1` and ESO reads over `http://openbao.openbao.svc:8200`, so anything with in-cluster network visibility (pod exec in the `openbao`/`external-secrets` namespaces, CNI-level capture, a future service-mesh sidecar) can observe values during ESO refresh cycles.
 
-Both are accepted for the staging substrate and synthetic data only. Treat them as **blocking** for anything holding real credentials or member data until the hardening phase lands (KMS auto-unseal for custody; cert-manager/vegvisir-issued listener cert + HTTPS/`caBundle` on the store for transit).
+Both are accepted for the staging substrate and synthetic data only. Treat them as **blocking** for anything holding real credentials or member data until the remaining hardening lands. Custody: KMS auto-unseal is now in place on gke (ADR 0004), so the parked shares there are recovery keys rather than the daily unseal path, but the parked root token is still all-powerful and homelab still holds its seal key in-cluster. Transit: a cert-manager/vegvisir-issued listener cert plus HTTPS/`caBundle` on the store is still outstanding.
 
 ## How to use it (the 90% case)
 
@@ -124,19 +124,35 @@ KV v2 inserts `data/` into the **API** path but not the **CLI or ESO** path. You
 
 ## Runbooks
 
-### The pod restarted and shows 0/1 — unseal it
+### The pod restarted and shows 0/1
 
-This is normal after any restart. Two of the three shares:
+Expected to resolve itself within a minute. If it does not:
 
 ```bash
-INIT=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.init\.json}' | base64 -d)
-# take any two of .unseal_keys_b64 from $INIT (or from the password manager on live envs)
-kubectl exec -n openbao openbao-0 -- bao operator unseal <share-1>
-kubectl exec -n openbao openbao-0 -- bao operator unseal <share-2>
-kubectl get pods -n openbao   # openbao-0 flips to 1/1
+kubectl exec -n openbao openbao-0 -- bao status      # Seal Type + Sealed
+kubectl logs -n openbao openbao-0 --tail=50          # "failed to unseal" names the backend error
 ```
 
-ESO recovers on its own within its retry interval; to hurry it, annotate the store (`kubectl annotate clustersecretstore openbao-kv force-sync=$(date +%s) --overwrite` — then remove the annotation, since it drifts from Git).
+Only a cluster still on `Seal Type shamir` needs the old two-share unseal; run the migration below instead of unsealing by hand again.
+
+ESO recovers on its own within its retry interval once the pod is Ready; to hurry it, annotate the store (`kubectl annotate clustersecretstore openbao-kv force-sync=$(date +%s) --overwrite` — then remove the annotation, since it drifts from Git).
+
+### Migrating an initialized OpenBao to auto-unseal (one-time, HUMAN-GATED)
+
+Prerequisite on gke: `./gke-provision.sh openbao-seal-setup` has run. On homelab: bootstrap Layer 2.9 created `openbao-seal-key` (on an older homelab cluster, run `kubectl create secret generic openbao-seal-key -n openbao --from-literal=key="$(openssl rand -base64 32)"` once).
+
+1. Hydrate the composition change (`update-embedded-git.sh <env> realm-siliconsaga`). ArgoCD rolls the StatefulSet; the pod comes back **sealed**, because a Shamir-initialized barrier does not know the new seal yet. This is the only restart that still needs a human.
+2. Migrate with two shares (password manager on live envs, else `openbao-init`):
+
+```bash
+kubectl exec -n openbao openbao-0 -- bao operator unseal -migrate <share-1>
+kubectl exec -n openbao openbao-0 -- bao operator unseal -migrate <share-2>
+```
+
+3. Verify: `bao status` now reports `Seal Type gcpckms` (or `static`) and `Recovery Seal Type shamir`, `Sealed false`.
+4. Prove it: `kubectl delete pod openbao-0 -n openbao`, then watch it return `1/1` unaided. This is also `tests/platform/openbao/01-restart.yaml`.
+
+Rolling back: set `parameters.seal: shamir` on the claim, hydrate, then `bao operator unseal -migrate` with the same shares reverses the migration.
 
 ### Fresh cluster (or wiped PVC) — full init
 
@@ -165,7 +181,7 @@ Staging: accept the loss — delete the openbao PVC and Helm release pod state, 
 
 ## What's deliberately NOT here yet
 
-- **KMS auto-unseal + HA** — the hardening phase. Until then, restarts need a human.
+- **HA** — still a single replica. Auto-unseal landed (ADR 0004); a second replica is its own change.
 - **TLS inside the cluster** — an active risk, not just a missing feature; see "Security limitations" above for the exposure scope. The hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
 - **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak consumes static values via ESO first; dynamic DB credentials are a later conversation.
 - **App-side OpenBao SDKs / agent injector** — intentionally avoided (ADR 0003). Consume through ExternalSecrets; if you think you need direct API access from a workload, raise it as a design question first.
