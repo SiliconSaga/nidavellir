@@ -63,7 +63,7 @@ Shape choices that matter when you're debugging:
 
 ## Custody posture: test vs live
 
-This substrate runs the **minimal unseal posture** (ADR 0002). The init output — unseal shares and root token — is parked in-cluster in the `openbao-init` Secret (ns `openbao`), with the root token duplicated as its own `root_token` key so tests can read it without JSON parsing. Anyone with cluster admin can read that Secret. That is an accepted tradeoff, not an oversight:
+This substrate started on the **minimal unseal posture** (ADR 0002) and now auto-unseals (ADR 0004); the custody of the init material is unchanged by that. The init output — unseal shares (now recovery keys) and root token — is parked in-cluster in the `openbao-init` Secret (ns `openbao`), with the root token duplicated as its own `root_token` key so tests can read it without JSON parsing. Anyone with cluster admin can read that Secret. That is an accepted tradeoff, not an oversight:
 
 - **homelab (staging, resettable):** in-cluster custody only. If everything is lost, wipe and re-init — nothing of value is at stake.
 - **GKE (live):** the same Secret exists for operational convenience, but the unseal shares and root token ALSO go into the operator's password manager at init time, BEFORE the in-cluster copy is created. If the cluster eats the Secret, you can still unseal.
@@ -141,18 +141,19 @@ ESO recovers on its own within its retry interval once the pod is Ready; to hurr
 
 Prerequisite on gke: `./gke-provision.sh openbao-seal-setup` has run. On homelab: bootstrap Layer 2.9 created `openbao-seal-key` (on an older homelab cluster, run `kubectl create secret generic openbao-seal-key -n openbao --from-literal=key="$(openssl rand -base64 32)"` once).
 
-1. Hydrate the composition change (`update-embedded-git.sh <env> realm-siliconsaga`). ArgoCD rolls the StatefulSet; the pod comes back **sealed**, because a Shamir-initialized barrier does not know the new seal yet. This is the only restart that still needs a human.
-2. Migrate with two shares (password manager on live envs, else `openbao-init`):
+1. Set `parameters.seal: auto` on the claim (`openbao/claim.yaml`), commit, and hydrate (`update-embedded-git.sh <env> realm-siliconsaga`). The XRD default is `shamir`, so nothing changed when the XRD landed; this commit is the graduation. Expect the `openbao` XR to report a transient render failure if it reconciles before `layer4-fundamentals` has delivered the new cluster-identity fields; it clears on the next reconcile.
+2. **Restart the pod yourself.** The chart's StatefulSet uses `updateStrategy: OnDelete` and carries no config checksum, so on both environments the running pod keeps its old Shamir config until something deletes it: `kubectl delete pod openbao-0 -n openbao`. It comes back **sealed**, `bao status` showing `Seal Type gcpckms` (or `static`) and `Sealed true`, because a Shamir-initialized barrier does not know the new seal yet. This is the only restart that still needs a human. Do not skip this step: a pod left running looks healthy while the migration is merely armed, and the next unplanned restart lands sealed at an unplanned hour.
+3. Migrate with two shares (password manager on live envs, else `openbao-init`):
 
 ```bash
 kubectl exec -n openbao openbao-0 -- bao operator unseal -migrate <share-1>
 kubectl exec -n openbao openbao-0 -- bao operator unseal -migrate <share-2>
 ```
 
-3. Verify: `bao status` now reports `Seal Type gcpckms` (or `static`) and `Recovery Seal Type shamir`, `Sealed false`.
-4. Prove it: `kubectl delete pod openbao-0 -n openbao`, then watch it return `1/1` unaided. This is also `tests/platform/openbao/01-restart.yaml`.
+4. Verify: `bao status` now reports `Seal Type gcpckms` (or `static`) and `Recovery Seal Type shamir`, `Sealed false`.
+5. Prove it: `kubectl delete pod openbao-0 -n openbao` once more, then watch it return `1/1` unaided. This is also `tests/platform/openbao/01-restart.yaml`.
 
-Rolling back: set `parameters.seal: shamir` on the claim, hydrate, then `bao operator unseal -migrate` with the same shares reverses the migration.
+Rolling back: set `parameters.seal: shamir` on the claim, hydrate, delete the pod (same OnDelete reason), then `bao operator unseal -migrate` with the same shares reverses the migration.
 
 ### Fresh cluster (or wiped PVC) — full init
 

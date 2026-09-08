@@ -1,5 +1,8 @@
-# Offline-render fixture: the seal opt-out. A cluster whose seal setup has not
-# run yet keeps the manual Shamir posture by setting parameters.seal: shamir.
+# Offline-render fixture: the XRD default and the opt-out. A claim that says
+# nothing about seal (today's committed claim) renders the manual Shamir
+# posture; so does an explicit parameters.seal: shamir. Kept without the field
+# so the render exercises the default path the live cluster is on until the
+# operator graduates it.
 apiVersion: nidavellir.siliconsaga.org/v1alpha1
 kind: XOpenBao
 metadata:
@@ -7,4 +10,3 @@ metadata:
 spec:
   parameters:
     storageSize: "2Gi"
-    seal: shamir

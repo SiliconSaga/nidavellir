@@ -3,7 +3,15 @@
 # gates on seal status and a restarted pod always came back sealed. Under ADR
 # 0004 it must pass on both environments. 00-assert.yaml already proved the
 # first Ready; this proves the SECOND, which is the one that matters.
+#
+# The delete WAITS for the pod object to be gone (kubectl's default). With
+# --wait=false the step would return while the old pod was still terminating,
+# the StatefulSet's readyReplicas would still read 1, and 01-assert would pass
+# against the FIRST Ready — proving nothing. The explicit `kubectl wait` is a
+# belt to that brace, harmless if the delete already waited.
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
-  - command: kubectl delete pod openbao-0 -n openbao --wait=false
+  - command: kubectl delete pod openbao-0 -n openbao
+  - command: kubectl wait --for=delete pod/openbao-0 -n openbao --timeout=60s
+    ignoreFailure: true
