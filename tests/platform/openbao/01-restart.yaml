@@ -9,16 +9,16 @@
 # XRD default (shamir) it fails by design — that is the finding, not a flake.
 # Skip it there with `--test` selection until the cluster is graduated.
 #
-# The delete WAITS for the pod object to be gone (kubectl's default). With
-# --wait=false the step would return while the old pod was still terminating,
-# the StatefulSet's readyReplicas would still read 1, and 01-assert would pass
-# against the FIRST Ready — proving nothing. The explicit `kubectl wait` is a
-# belt to that brace, harmless if the delete already waited.
+# The delete WAITS for the pod object to be gone (kubectl's default) and is
+# bounded, so a delete that never completes fails the step. With --wait=false
+# it would return while the old pod was still terminating, the StatefulSet's
+# readyReplicas would still read 1, and 01-assert would pass against the FIRST
+# Ready — proving nothing.
+#
+# Deliberately NO separate `kubectl wait --for=delete` afterwards: the
+# StatefulSet recreates a pod with the same name within seconds, so a second
+# wait would latch onto the replacement and time out — a false failure.
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
-  - command: kubectl delete pod openbao-0 -n openbao
-  # Not ignoreFailure: a delete that never completes must fail the test.
-  # `--for=delete` on an already-gone pod exits 0, so this is safe after the
-  # waiting delete above.
-  - command: kubectl wait --for=delete pod/openbao-0 -n openbao --timeout=60s
+  - command: kubectl delete pod openbao-0 -n openbao --timeout=60s
