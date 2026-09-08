@@ -18,5 +18,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
   - command: kubectl delete pod openbao-0 -n openbao
+  # Not ignoreFailure: a delete that never completes must fail the test.
+  # `--for=delete` on an already-gone pod exits 0, so this is safe after the
+  # waiting delete above.
   - command: kubectl wait --for=delete pod/openbao-0 -n openbao --timeout=60s
-    ignoreFailure: true
