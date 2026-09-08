@@ -33,6 +33,7 @@ check homelab "$tmp_home" yes 'current_key    = "env://BAO_SEAL_STATIC_KEY"'
 check homelab "$tmp_home" yes 'secretName: openbao-seal-key'
 check homelab "$tmp_home" no  'seal "gcpckms"'
 check homelab "$tmp_home" no  'iam.gke.io/gcp-service-account'
+check homelab "$tmp_home" no  'serviceAccount:'
 
 # gke: KMS seal with coordinates from cluster-identity; WI annotation on the KSA; no static key.
 check gke "$tmp_gke" yes 'seal "gcpckms"'
@@ -41,6 +42,11 @@ check gke "$tmp_gke" yes 'region     = "us-east1"'
 check gke "$tmp_gke" yes 'key_ring   = "openbao"'
 check gke "$tmp_gke" yes 'crypto_key = "unseal"'
 check gke "$tmp_gke" yes 'iam.gke.io/gcp-service-account: openbao-seal@example-project.iam.gserviceaccount.com'
+# The annotation must sit under the chart's server.serviceAccount, not on the
+# Release or the HTTPRoute Object: `serviceAccount:` appears in the render ONLY
+# when that values block was emitted, so its presence here (and absence on the
+# other two renders below) anchors where the annotation landed.
+check gke "$tmp_gke" yes 'serviceAccount:'
 check gke "$tmp_gke" no  'seal "static"'
 check gke "$tmp_gke" no  'BAO_SEAL_STATIC_KEY'
 
@@ -48,6 +54,7 @@ check gke "$tmp_gke" no  'BAO_SEAL_STATIC_KEY'
 check shamir "$tmp_shamir" no 'seal "gcpckms"'
 check shamir "$tmp_shamir" no 'seal "static"'
 check shamir "$tmp_shamir" no 'iam.gke.io/gcp-service-account'
+check shamir "$tmp_shamir" no 'serviceAccount:'
 
 # unchanged seams from before this change
 check homelab "$tmp_home" yes 'storageClass: local-path'

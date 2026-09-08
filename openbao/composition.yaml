@@ -58,6 +58,9 @@ spec:
           {{- if and (eq $seal "auto") (eq $env "gke") (not $identity.gcpProject) -}}
           {{ fail "cluster-identity gcpProject is required for the gcpckms seal on gke (stamped by nordri hydration from GCP_PROJECT)" }}
           {{- end -}}
+          {{- if and (eq $seal "auto") (eq $env "gke") (not $identity.gcpRegion) -}}
+          {{ fail "cluster-identity gcpRegion is required for the gcpckms seal on gke (the region of the openbao key ring)" }}
+          {{- end -}}
           apiVersion: helm.crossplane.io/v1beta1
           kind: Release
           metadata:
