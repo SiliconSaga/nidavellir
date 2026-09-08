@@ -1,7 +1,9 @@
 # Retiring the seed Gitea: Forgejo cutover design
 
-**Status:** design, not scheduled
+**Status:** superseded 2026-09-07 by the realm's [Forgejo day-2 design (revised)](https://github.com/SiliconSaga/realm-siliconsaga/blob/main/docs/plans/2026-09-07-forgejo-day2-design.md); kept for the reasoning
 **Date:** 2026-08-18 · revised 2026-08-23
+
+> **Superseded.** The realm design keeps this document's two load-bearing findings — Forgejo is an ordinary Mimir customer and never on the bootstrap path, and pull-mirroring maintained repos kills the local-branch loop — but resolves mirror direction a third way: GitHub stays authoritative for `main`, Forgejo is a writable non-mirror host, and an in-cluster puller syncs `main` with no GitHub credential. Phase 0 here (a PVC on the seed) was replaced by making the seed slim and internally consistent instead, done on GKE 2026-09-07. Graduation is driven by a `maturity` field on cluster-identity.
 
 Planning only. Nothing here is implemented — Forgejo currently exists as a single `DataService` claim in `nidavellir/forgejo/dataservice.yaml` with no deployment behind it.
 
