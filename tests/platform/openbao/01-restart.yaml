@@ -4,6 +4,11 @@
 # 0004 it must pass on both environments. 00-assert.yaml already proved the
 # first Ready; this proves the SECOND, which is the one that matters.
 #
+# This asserts the GRADUATED state: the claim says seal: auto and the one-time
+# migration has run (docs/secrets-management.md). On a cluster still on the
+# XRD default (shamir) it fails by design — that is the finding, not a flake.
+# Skip it there with `--test` selection until the cluster is graduated.
+#
 # The delete WAITS for the pod object to be gone (kubectl's default). With
 # --wait=false the step would return while the old pod was still terminating,
 # the StatefulSet's readyReplicas would still read 1, and 01-assert would pass

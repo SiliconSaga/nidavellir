@@ -8,7 +8,9 @@ Two kuttl test suites are available for nidavellir.
 kubectl kuttl test --config kuttl-test.yaml
 ```
 
-Covers: vegvisir, cert-manager, ClusterIssuers, default certificate.
+Covers: vegvisir, cert-manager, ClusterIssuers, default certificate, OpenBao.
+
+`tests/platform/openbao/01-restart.yaml` asserts a restarted `openbao-0` returns Ready unaided, which is only true once the cluster has been graduated to `seal: auto` and migrated ([Secrets Management](secrets-management.md)). On a cluster still on the Shamir default it fails by design; run the suite with `--test` selection excluding `openbao` there, or graduate the cluster.
 
 ## End-to-end tests (require live DNS for cmdbee.org)
 
