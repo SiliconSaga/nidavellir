@@ -10,3 +10,4 @@ data:
   storageClass: local-path
   harborRole: local
   harborCentral: harbor.cmdbee.org
+  maturity: bootstrap

@@ -28,9 +28,9 @@ spec:
             name: cluster-identity
 
   # ──────────────────────────────────────────────────────────
-  # Step 1: OpenBao Helm Release (single-node Raft, minimal
-  # unseal posture — manual init/unseal, runbooks in
-  # docs/secrets-management.md).
+  # Step 1: OpenBao Helm Release (single-node Raft, auto-unseal
+  # per environment — realm ADR 0004; seal: shamir opts out;
+  # runbooks in docs/secrets-management.md).
   # fullnameOverride pins the workload/Service names to plain
   # `openbao` (pod openbao-0, svc openbao) — without it the helm
   # release name inherits the XR's random claim suffix and every
@@ -53,6 +53,18 @@ spec:
           {{- $storageClass := $identity.storageClass -}}
           {{- $version := .observed.composite.resource.spec.parameters.chartVersion | default "0.28.3" -}}
           {{- $size := .observed.composite.resource.spec.parameters.storageSize | default "2Gi" -}}
+          {{- /* Default matches the XRD: shamir, so a claim that says nothing keeps today's manual posture. */ -}}
+          {{- $seal := .observed.composite.resource.spec.parameters.seal | default "shamir" -}}
+          {{- $env := $identity.environment -}}
+          {{- if and (eq $seal "auto") (ne $env "gke") (ne $env "homelab") -}}
+          {{ fail (printf "seal: auto has no seal configuration for environment %q (expected gke or homelab); set parameters.seal: shamir to opt out" $env) }}
+          {{- end -}}
+          {{- if and (eq $seal "auto") (eq $env "gke") (or (not $identity.gcpProject) (hasPrefix "__" $identity.gcpProject)) -}}
+          {{ fail "cluster-identity gcpProject is required for the gcpckms seal on gke (stamped by nordri hydration from GCP_PROJECT; the raw placeholder counts as missing)" }}
+          {{- end -}}
+          {{- if and (eq $seal "auto") (eq $env "gke") (not $identity.gcpRegion) -}}
+          {{ fail "cluster-identity gcpRegion is required for the gcpckms seal on gke (the region of the openbao key ring)" }}
+          {{- end -}}
           apiVersion: helm.crossplane.io/v1beta1
           kind: Release
           metadata:
@@ -71,6 +83,23 @@ spec:
                 injector:
                   enabled: false
                 server:
+                  {{- if and (eq $seal "auto") (eq $env "gke") }}
+                  # Workload Identity: the KSA the chart creates (plain `openbao`
+                  # via fullnameOverride) impersonates the GSA that holds
+                  # encrypt/decrypt on the KMS key. Provisioned by
+                  # nordri/gke-provision.sh openbao-seal-setup.
+                  serviceAccount:
+                    annotations:
+                      iam.gke.io/gcp-service-account: openbao-seal@{{ $identity.gcpProject }}.iam.gserviceaccount.com
+                  {{- end }}
+                  {{- if and (eq $seal "auto") (eq $env "homelab") }}
+                  # Static seal key from the Secret nordri bootstrap Layer 2.9
+                  # creates. The seal stanza reads it via env://.
+                  extraSecretEnvironmentVars:
+                    - envName: BAO_SEAL_STATIC_KEY
+                      secretName: openbao-seal-key
+                      secretKey: key
+                  {{- end }}
                   standalone:
                     enabled: true
                     config: |
@@ -83,6 +112,20 @@ spec:
                       storage "raft" {
                         path = "/openbao/data"
                       }
+                      {{- if and (eq $seal "auto") (eq $env "gke") }}
+                      seal "gcpckms" {
+                        project    = "{{ $identity.gcpProject }}"
+                        region     = "{{ $identity.gcpRegion }}"
+                        key_ring   = "openbao"
+                        crypto_key = "unseal"
+                      }
+                      {{- end }}
+                      {{- if and (eq $seal "auto") (eq $env "homelab") }}
+                      seal "static" {
+                        current_key_id = "homelab-1"
+                        current_key    = "env://BAO_SEAL_STATIC_KEY"
+                      }
+                      {{- end }}
                   dataStorage:
                     enabled: true
                     size: {{ $size }}

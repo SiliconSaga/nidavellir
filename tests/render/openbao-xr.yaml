@@ -9,3 +9,6 @@ metadata:
 spec:
   parameters:
     storageSize: "2Gi"
+    # The graduated state: auto-unseal per environment (realm ADR 0004). The
+    # XRD default is shamir, exercised by openbao-xr-shamir.yaml.
+    seal: auto
