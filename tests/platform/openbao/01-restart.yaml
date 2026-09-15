@@ -1,0 +1,24 @@
+# Auto-unseal proof: kill the pod and require it to come back Ready on its own.
+# Under the ADR 0002 manual posture this step could never pass — readiness
+# gates on seal status and a restarted pod always came back sealed. Under ADR
+# 0004 it must pass on both environments. 00-assert.yaml already proved the
+# first Ready; this proves the SECOND, which is the one that matters.
+#
+# This asserts the GRADUATED state: the claim says seal: auto and the one-time
+# migration has run (docs/secrets-management.md). On a cluster still on the
+# XRD default (shamir) it fails by design — that is the finding, not a flake.
+# Skip it there with `--test` selection until the cluster is graduated.
+#
+# The delete WAITS for the pod object to be gone (kubectl's default) and is
+# bounded, so a delete that never completes fails the step. With --wait=false
+# it would return while the old pod was still terminating, the StatefulSet's
+# readyReplicas would still read 1, and 01-assert would pass against the FIRST
+# Ready — proving nothing.
+#
+# Deliberately NO separate `kubectl wait --for=delete` afterwards: the
+# StatefulSet recreates a pod with the same name within seconds, so a second
+# wait would latch onto the replacement and time out — a false failure.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - command: kubectl delete pod openbao-0 -n openbao --timeout=60s

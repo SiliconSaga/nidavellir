@@ -38,6 +38,11 @@ spec:
                     domain:
                       type: string
                       description: "Override the cluster-identity domain for the ingress host. When unset, the HTTPRoute host is openbao.<cluster-identity domain>."
+                    seal:
+                      type: string
+                      enum: ["auto", "shamir"]
+                      default: "shamir"
+                      description: "auto renders the environment's auto-unseal seal (gcpckms via Workload Identity on gke, static key from Secret openbao-seal-key on homelab; realm ADR 0004). shamir renders no seal stanza — the manual-unseal posture of ADR 0002. The DEFAULT is shamir so that merging the XRD changes nothing on a running cluster; graduation is the operator setting seal: auto on the claim after the seal prerequisites exist (docs/secrets-management.md, 'Migrating to auto-unseal')."
       additionalPrinterColumns:
       - name: READY
         type: string

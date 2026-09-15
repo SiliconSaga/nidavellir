@@ -11,3 +11,7 @@ data:
   environment: gke
   storageClass: standard-rwo
   harborRole: central
+  maturity: bootstrap
+  # Stand-in for the value bootstrap stamps from GCP_PROJECT at hydration.
+  gcpProject: example-project
+  gcpRegion: us-east1
