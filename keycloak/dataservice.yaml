@@ -12,11 +12,11 @@
 # asked for "15"; the shared cluster's version is the platform's concern now.
 # Likewise no storageSize or replicas.
 #
-# NOT APPLIED YET. The keycloak Application's automated sync is disabled while
-# Keycloak is suspended (see apps/keycloak-app.yaml), so this file is
-# declarative intent until the app is resumed and synced. That ordering is
-# deliberate: resuming should provision a fresh empty database rather than
-# leave one sitting on the shared cluster in the meantime.
+# A cluster moving here from the legacy claim gets a FRESH, EMPTY database:
+# nothing migrates the old Percona cluster's contents. The operator
+# re-bootstraps the admin from keycloak-initial-admin on first start, and any
+# realm delivered by a KeycloakRealmImport is re-imported by recreating that
+# CR (the operator runs each import CR exactly once).
 apiVersion: mimir.siliconsaga.org/v1alpha1
 kind: DataService
 metadata:
