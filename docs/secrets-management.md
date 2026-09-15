@@ -26,6 +26,39 @@ Two halves, two jobs:
 
 Why not just use Kubernetes Secrets directly? You still do — at the consumption end. OpenBao adds what bare Secrets lack: one place to put a value that several namespaces/clusters need, versioning, audit, revocable policies, and (later) dynamic credentials. The pattern scales from "one shared API token" to "Keycloak's DB password rotates hourly" without changing how workloads consume anything.
 
+## Inventory: what actually holds a credential
+
+The deeper platform credentials, and how each is held. Kept here because "is this value in OpenBao or hand-applied?" was repeatedly being answered by grepping, and because the *gaps* are the interesting rows. Verified against the live GKE cluster 2026-09-15.
+
+| What | Where the truth lives | How it reaches the workload | Keyless? |
+| --- | --- | --- | --- |
+| Shared MySQL off-site backup (GCS HMAC) | OpenBao `secret/mimir-mysql-backup` | ESO → `mimir-mysql-backup-s3` in `mimir` | ❌ **cannot be** — see below |
+| Harbor | OpenBao `secret/harbor` | ESO → `nidavellir/eitri/harbor/externalsecret.yaml` | n/a (static by nature) |
+| Leidangr OIDC | OpenBao `secret/leidangr/…` | ESO → `keycloak/leidangr-oidc-realm-secrets` | n/a |
+| ESO → OpenBao auth | nothing stored | Kubernetes auth, SA token exchange | ✅ |
+| Shared Postgres off-site backup | nothing stored | Workload Identity, `repo2-gcs-key-type: auto` | ✅ |
+| Velero → GCS | nothing stored | Workload Identity, `credentials.useSecret: false` | ✅ |
+| OpenBao shares + root token | `openbao-init` Secret (ns `openbao`) + operator password manager | by hand at unseal time; recovery keys once graduated to `seal: auto` | ❌ by design (ADR 0002 → 0004) |
+| Gitea admin | `gitea-admin-credentials` Secret (ns `gitea`) | read by the hydration script | ❌ not in OpenBao |
+| **XenForo DB password** | plain Secret, hand-applied | `xenforo-secrets` | ❌ **not in OpenBao** |
+| Grafana admin | see `heimdall/docs/grafana-admin-credentials.md` | chart-managed Secret | ❌ not in OpenBao |
+
+Two rows worth acting on: XenForo already *has* an `ExternalSecret` written (`xenforo-k8s/kustomize/components/secrets-openbao/externalsecret.yaml`) but the live cluster is still running the plain-Secret flavor — it has not been cut over. Gitea's admin credential is the bootstrap dependency that OpenBao itself sits behind, so it is genuinely awkward to move rather than merely unmoved.
+
+## Not everything can be keyless, and one thing genuinely cannot
+
+The platform's default is Workload Identity with nothing stored — three of the rows above. So when a static credential appears, the question is always "why wasn't this keyless?", and there is now exactly one place where the honest answer is *it cannot be*:
+
+**The Percona PXC operator has no native GCS backend.** It supports exactly `filesystem`, `s3`, `azure`. The Percona *Postgres* operator supports `gcs:` with `gcs-key-type: auto`, which is why `repo2` next door is keyless. MySQL therefore reaches GCS through its **S3-interoperability endpoint** (`https://storage.googleapis.com`), and that API authenticates with **HMAC keys** — which Workload Identity cannot issue. Swapping the `credentialsSecret` for an `iam.gke.io/gcp-service-account` annotation does not work; `xbcloud` 403s.
+
+The mitigation is blast radius, not elimination:
+
+- a dedicated GSA (`mysql-backup@…`) holding `roles/storage.objectAdmin` on **one bucket only** — not project-wide, not on the Velero or pgBackRest buckets
+- the key lives in OpenBao, materialized by ESO, never in Git
+- a recovery copy in the workspace `.env`, because of the seal posture below
+
+Reach for this shape only when the consuming operator genuinely has no keyless path. Check the operator's storage types before assuming it needs a key.
+
 ## Sealing, explained from zero
 
 This is the concept that trips up everyone new to Vault-family tools, so here it is from first principles.
@@ -69,6 +102,27 @@ This substrate started on the **minimal unseal posture** (ADR 0002) and now auto
 - **GKE (live):** the same Secret exists for operational convenience, but the unseal shares and root token ALSO go into the operator's password manager at init time, BEFORE the in-cluster copy is created. If the cluster eats the Secret, you can still unseal.
 - **Auto-unseal (ADR 0004, landed with the Forgejo day-2 Phase 1):** gke holds the barrier key in Cloud KMS, reached through Workload Identity; homelab holds a static key in Secret `openbao-seal-key`. The parked `openbao-init` material remains the recovery keys and root token. The homelab posture is honest about being homelab: anyone who can read Secrets in `openbao` can unseal, exactly as before, but nobody has to.
 
+> **⚠ LIVE STATE, GKE, verified 2026-09-15: auto-unseal is available but NOT YET IN EFFECT here.**
+>
+> Auto-unseal landing in Git and a given cluster actually using it are two different facts, and only the first is visible from this repo. The XRD defaults `seal` to `shamir` precisely so merging ADR 0004 is inert, so every cluster stays manual until an operator runs the graduation below. `bao status` on ttf-cluster still reports:
+>
+> ```
+> Seal Type    shamir
+> Total Shares 3
+> Threshold    2
+> Active Since 2026-09-07T00:45:05Z
+> ```
+>
+> `Seal Type: shamir` is the whole answer — a graduated cluster reports `gcpckms` with `Recovery Seal Type shamir`. So this cluster still needs two shares after any restart.
+>
+> The reason that has not hurt yet is the `Active Since` line: the pod has not restarted in over a week, so nobody has been asked. It reads as automatic without being automatic, which is why "I thought we did the special thing on GKE" is such an easy belief to hold. Check rather than trust either recollection or this paragraph:
+>
+> ```bash
+> kubectl exec -n openbao openbao-0 -- bao status
+> ```
+>
+> **What a seal does and does not break.** A sealed OpenBao cannot serve reads, so no `ExternalSecret` can *refresh*. But already-materialized Secrets persist — ESO does not delete a target on refresh failure, and `deletionPolicy: Retain` makes that explicit — so running workloads keep working while sealed. What breaks is needing to **create or recreate** a Secret during a seal. That is the scenario the `.env` recovery copy of the MySQL HMAC key exists for: it lets a backup target be rebuilt without first finding two shares.
+
 ### Security limitations (read these before reusing the pattern anywhere serious)
 
 Spelled out so nobody has to infer severity from the narrative above:
@@ -88,6 +142,31 @@ kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secr
 ```
 
 Using the root token here is a staging-posture convenience. Best practice reserves the root token for bootstrap and recovery; if you're doing routine value management (or copying this pattern toward production), mint a scoped operator token instead — `bao policy write kv-write` with write capabilities over `secret/data/*`, then `bao token create -policy=kv-write -ttl=8h` — and use that as `BAO_TOKEN`.
+
+**Prefer stdin for anything real.** The `api-key=swordfish` form above is fine for the demo value, but a `key=value` argument lands in the container's process arguments, where anything that can read `/proc` on that pod sees it. `bao kv put <path> -` reads a JSON object from stdin instead, so the value never becomes an argv:
+
+```bash
+printf '{"AWS_ACCESS_KEY_ID":"…","AWS_SECRET_ACCESS_KEY":"…"}' \
+  | kubectl exec -i -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" \
+      bao kv put secret/mimir-mysql-backup -
+```
+
+Better still, keep the value in a file and redirect, so it is never in shell history either. Under the `ws k8s` guard the `-i` flag must come *after* the pod name (`ws k8s exec -n openbao openbao-0 -i -- …`) — the guard rejects unrecognised options positioned before the resource.
+
+**Verify by round-trip, not by eye.** Read the value back and compare it programmatically to the source rather than printing it:
+
+```bash
+kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" \
+  bao kv get -format=json secret/mimir-mysql-backup
+```
+
+Diff the fields against wherever the value came from. A truncated or newline-mangled credential looks completely normal in a terminal and fails much later, at the point of use, with an authentication error that implicates the wrong thing.
+
+**Inventory what is there** — useful before adding a value, and the source of the table at the top of this doc (paths and key names only, never values):
+
+```bash
+kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv list secret/
+```
 
 **Consume it from any namespace** — declare an ExternalSecret; ESO materializes and refreshes a plain Secret next to your workload:
 
@@ -190,7 +269,7 @@ Staging: accept the loss — delete the openbao PVC and Helm release pod state, 
 
 ## What's deliberately NOT here yet
 
-- **HA** — still a single replica. Auto-unseal landed (ADR 0004); a second replica is its own change.
+- **HA** — still a single replica. Auto-unseal landed (ADR 0004); a second replica is its own change. Note `bao status` already reports `HA Enabled: true` with Raft storage against that one replica, so the line is HA *plumbing*, not HA — do not read it as redundancy.
 - **TLS inside the cluster** — an active risk, not just a missing feature; see "Security limitations" above for the exposure scope. The hardening phase fronts the listener with a cert (cert-manager/vegvisir) and flips the ClusterSecretStore to HTTPS + `caBundle`.
 - **Dynamic secrets / rotation** — KV v2 static values only for now. Keycloak consumes static values via ESO first; dynamic DB credentials are a later conversation.
 - **App-side OpenBao SDKs / agent injector** — intentionally avoided (ADR 0003). Consume through ExternalSecrets; if you think you need direct API access from a workload, raise it as a design question first.
