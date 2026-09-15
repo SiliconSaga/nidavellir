@@ -32,20 +32,18 @@ spec:
     server: https://kubernetes.default.svc
     namespace: keycloak
   syncPolicy:
-    # SUSPENDED 2026-09-06, with the operator app. The Keycloak StatefulSet is
-    # scaled to 0; with the operator also down, nothing reconciles it back.
+    # RESUMED 2026-09-15, with the operator app. Suspended 2026-09-06 while
+    # Keycloak had no consumer; the leidangr realm import now needs it, and
+    # the suspension itself proved costly: a 2026-09-12 hydration from a
+    # checkout that predated it re-enabled automation from stale content and
+    # re-provisioned the legacy Percona cluster this app had already moved
+    # off. A parked app is only parked until the next rehydrate.
     #
-    # The Postgres claim and the HTTPRoute in keycloak/ are deliberately left
-    # in place: the realm data stays on its PVC and keycloak.cmdbee.org keeps
-    # resolving, so resuming is a scale-up rather than a re-provision. That
-    # also keeps the claim — one of only two users of the legacy Mimir
-    # PostgreSQLInstance path — available for the eventual DataService move.
-    #
-    # To resume: restore the automated block here and on the operator app,
-    # scale the operator to 1, and let it reconcile the Keycloak CR.
-    # automated:
-    #   prune: true
-    #   selfHeal: true
+    # prune is load-bearing here: it is what removes the legacy
+    # PostgreSQLInstance claim when a cluster still carries one.
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true

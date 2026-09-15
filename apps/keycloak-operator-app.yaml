@@ -34,22 +34,20 @@ spec:
     server: https://kubernetes.default.svc
     namespace: keycloak
   syncPolicy:
-    # SUSPENDED 2026-09-06. Keycloak is not in use yet, and this operator was
-    # the single largest block of reserved-and-idle CPU in the cluster: 300m
-    # requested against a 12-14m steady state (see heimdall
-    # docs/observations/rightsizing.md). The Deployment is scaled to 0
-    # alongside this change.
+    # RESUMED 2026-09-15 (suspended 2026-09-06 while Keycloak had no consumer;
+    # the leidangr realm import now needs it). The cost that motivated the
+    # suspension is unchanged and still open: the operator requests 300m
+    # against a 12-14m steady state (heimdall docs/observations/rightsizing.md)
+    # and cannot be tuned here — these are vendor manifests with no values
+    # file. Right-sizing it means a kustomize overlay over the mirror.
     #
-    # Disabling automation rather than removing the Application is deliberate.
-    # The app carries a resources-finalizer, and the parent nidavellir app
-    # syncs apps/ with prune: true — so deleting or unlisting this file would
-    # cascade-delete the CRDs and the Keycloak resources rather than park them.
-    # Left as-is, the Application and CRDs stay put and nothing reconciles.
-    #
-    # To resume: restore the automated block and scale the operator back to 1.
-    # automated:
-    #   prune: true
-    #   selfHeal: true
+    # If it ever needs parking again: disable automation, do NOT delete or
+    # unlist this file. The app carries a resources-finalizer and the parent
+    # nidavellir app prunes, so removal cascade-deletes the CRDs and every
+    # Keycloak resource with them.
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
