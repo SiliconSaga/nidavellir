@@ -45,11 +45,16 @@ The deeper platform credentials, and how each is held. Kept here because "is thi
 
 Two rows worth acting on: XenForo already *has* an `ExternalSecret` written (`xenforo-k8s/kustomize/components/secrets-openbao/externalsecret.yaml`) but the live cluster is still running the plain-Secret flavor — it has not been cut over. Gitea's admin credential is the bootstrap dependency that OpenBao itself sits behind, so it is genuinely awkward to move rather than merely unmoved.
 
-## Storage integrations are keyless — with one exception that cannot be
+## GCP storage integrations are keyless — with one that cannot be
 
-Scope this claim carefully, because the inventory holds several non-keyless rows and they are not the same kind of thing. Harbor and the Leidangr OIDC values are static *by nature* — there is no identity to federate, they are just secrets. Gitea's admin credential is a bootstrap dependency. Neither of those is a keyless failure.
+Scope this claim carefully, because the inventory's non-keyless rows are not all the same kind of thing. Harbor and the Leidangr OIDC values are static *by nature* — there is no identity to federate, they are just secrets. Gitea's admin credential is a bootstrap dependency. Neither is a keyless failure.
 
-**Cloud storage integrations** are the category where keyless is the established default: three rows above reach GCP with nothing stored at all (ESO→OpenBao auth, Postgres `repo2`, Velero→GCS). So when a *storage* integration turns up holding a static credential, the question is always "why wasn't this keyless?" — and there is exactly one case where the honest answer is *it cannot be*:
+Two distinct keyless mechanisms are in play here, and conflating them makes the count wrong:
+
+- **ESO → OpenBao** is keyless via **Kubernetes auth** — `mountPath: kubernetes`, `role: eso-role`, and a ServiceAccount reference in `openbao/secretstore.yaml`. No GCP, no Workload Identity, nothing stored. It is the delivery path, not a cloud integration.
+- **GCP storage integrations** are keyless via **Workload Identity**. Exactly **two** rows: Postgres `repo2` (`repo2-gcs-key-type: auto`) and Velero → GCS (`credentials.useSecret: false`).
+
+It is that second group that sets the expectation. So when a *GCP storage* integration turns up holding a static credential, the question is always "why wasn't this keyless?" — and there is exactly one case where the honest answer is *it cannot be keyless*:
 
 **The Percona PXC operator has no native GCS backend.** It supports exactly `filesystem`, `s3`, `azure`. The Percona *Postgres* operator supports `gcs:` with `gcs-key-type: auto`, which is why `repo2` next door is keyless. MySQL therefore reaches GCS through its **S3-interoperability endpoint** (`https://storage.googleapis.com`), and that API authenticates with **HMAC keys** — which Workload Identity cannot issue. Swapping the `credentialsSecret` for an `iam.gke.io/gcp-service-account` annotation does not work; `xbcloud` 403s.
 
@@ -164,18 +169,27 @@ Using the root token here is a staging-posture convenience. Best practice reserv
 
 `read -r T` consumes the first line; `BAO_TOKEN="$T"` is a shell assignment *inside* the container, so it reaches the process environment without ever appearing in any command line. Keeping the payload in a file rather than a literal also keeps it out of shell history. Under the `ws k8s` guard, `-i` must come *after* the pod name (`ws k8s exec -n openbao openbao-0 -i -- …`) — the guard rejects unrecognised options positioned before the resource.
 
-**Verify by round-trip, with a check that actually fails.** Printing the stored JSON proves only that the read succeeded — a successful read of a *truncated* value looks identical. Compare against the source and exit non-zero on mismatch:
+**Verify by round-trip, with a check that actually fails — on EVERY field.** Printing the stored JSON proves only that the read succeeded; a successful read of a *truncated* value looks identical. And checking one field is barely better: an HMAC pair whose access-key ID matches while the secret is truncated passes a single-field check and then fails at the point of use. Compare the whole payload:
 
 ```bash
-expected=$(python3 -c 'import json;print(json.load(open("payload.json"))["AWS_ACCESS_KEY_ID"])')
-got=$(printf '%s\n' "$ROOT_TOKEN" \
+printf '%s\n' "$ROOT_TOKEN" \
   | kubectl exec -i -n openbao openbao-0 -- \
-      sh -c 'read -r T; BAO_TOKEN="$T" bao kv get -field=AWS_ACCESS_KEY_ID secret/mimir-mysql-backup')
-
-[ "$got" = "$expected" ] || { echo "MISMATCH — do not proceed" >&2; exit 1; }
+      sh -c 'read -r T; BAO_TOKEN="$T" bao kv get -format=json secret/mimir-mysql-backup' \
+  | python3 -c '
+import json, sys
+stored = json.load(sys.stdin)["data"]["data"]
+expected = json.load(open("payload.json"))
+bad = sorted(k for k in expected if stored.get(k) != expected[k])
+extra = sorted(set(stored) - set(expected))
+if bad or extra:
+    sys.exit("MISMATCH — differing: %s; unexpected: %s" % (bad or "none", extra or "none"))
+print("all %d fields match" % len(expected))
+'
 ```
 
-`-field=` returns the bare value, so the comparison is exact rather than a JSON-shaped near-match. A truncated or newline-mangled credential looks completely normal in a terminal and fails much later, at the point of use, with an authentication error that implicates the wrong component entirely.
+Exits non-zero and **names the offending field** without printing any value, and catches an extra key left behind by an earlier write. Both the read and the comparison are piped, so neither the token nor the payload reaches an argv on either side.
+
+Verified against a throwaway path in both directions, including the specific case worth caring about: ID correct, secret truncated by three characters — reported `differing: ['AWS_SECRET_ACCESS_KEY']` and exited 1. A mangled credential looks completely normal in a terminal and fails much later, with an authentication error that implicates the wrong component entirely.
 
 **Inventory what is there** — useful before adding a value, and the source of the table at the top of this doc (paths and key names only, never values):
 
