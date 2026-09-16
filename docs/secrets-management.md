@@ -147,9 +147,14 @@ kubectl exec -n openbao openbao-0 -- ls -l /tmp/pre-migrate.snap   # OpenBao 2.5
 kubectl cp openbao/openbao-0:/tmp/pre-migrate.snap ./openbao-pre-migrate-$(date +%Y%m%d).snap   # gke: `ws k8s cp` under the armed scope instead
 ```
 
-Then compare the copy's size to the in-pod size before going on.
+Then compare the copy's size to the in-pod size, and stop if they differ:
 
 ```bash
+snapshot="./openbao-pre-migrate-$(date +%Y%m%d).snap"
+pod_bytes="$(kubectl exec -n openbao openbao-0 -- wc -c < /dev/null /tmp/pre-migrate.snap | awk '{print $1}')"
+local_bytes="$(wc -c < "$snapshot")"
+printf 'in-pod: %s bytes; local: %s bytes\n' "$pod_bytes" "$local_bytes"
+[ "$pod_bytes" -gt 0 ] && [ "$pod_bytes" -eq "$local_bytes" ] || { echo "snapshot copy incomplete — do not continue" >&2; false; }
 ```
 
 Keep the copy off-cluster until step 5 has passed; `bao operator raft snapshot restore` is the way back if the migration goes wrong. (Windows/Git Bash: `MSYS_NO_PATHCONV=1` in front of the `kubectl exec`/`cp` lines.)
