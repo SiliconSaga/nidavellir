@@ -253,8 +253,18 @@ Prerequisites: on gke, `./gke-provision.sh openbao-seal-setup` has run; on homel
 
 ```bash
 kubectl exec -n openbao openbao-0 -- bao operator raft snapshot save /tmp/pre-migrate.snap
-kubectl exec -n openbao openbao-0 -- bao operator raft snapshot inspect /tmp/pre-migrate.snap   # must list the KV mount and report a sane size
-kubectl cp openbao/openbao-0:/tmp/pre-migrate.snap ./openbao-pre-migrate-$(date +%Y%m%d).snap
+kubectl exec -n openbao openbao-0 -- ls -l /tmp/pre-migrate.snap   # OpenBao 2.5 has only `save` and `restore` — no `inspect`; a sane size is the check
+kubectl cp openbao/openbao-0:/tmp/pre-migrate.snap ./openbao-pre-migrate-$(date +%Y%m%d).snap   # gke: `ws k8s cp` under the armed scope instead
+```
+
+Then compare the copy's size to the in-pod size, and stop if they differ:
+
+```bash
+snapshot="./openbao-pre-migrate-$(date +%Y%m%d).snap"
+pod_bytes="$(kubectl exec -n openbao openbao-0 -- wc -c /tmp/pre-migrate.snap | awk '{print $1}')"
+local_bytes="$(wc -c < "$snapshot")"
+printf 'in-pod: %s bytes; local: %s bytes\n' "$pod_bytes" "$local_bytes"
+[ "$pod_bytes" -gt 0 ] && [ "$pod_bytes" -eq "$local_bytes" ] || { echo "snapshot copy incomplete — do not continue" >&2; false; }
 ```
 
 Keep the copy off-cluster until step 5 has passed; `bao operator raft snapshot restore` is the way back if the migration goes wrong. (Windows/Git Bash: `MSYS_NO_PATHCONV=1` in front of the `kubectl exec`/`cp` lines.)
