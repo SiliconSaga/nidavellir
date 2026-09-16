@@ -143,8 +143,13 @@ Prerequisites: on gke, `./gke-provision.sh openbao-seal-setup` has run; on homel
 
 ```bash
 kubectl exec -n openbao openbao-0 -- bao operator raft snapshot save /tmp/pre-migrate.snap
-kubectl exec -n openbao openbao-0 -- bao operator raft snapshot inspect /tmp/pre-migrate.snap   # must list the KV mount and report a sane size
-kubectl cp openbao/openbao-0:/tmp/pre-migrate.snap ./openbao-pre-migrate-$(date +%Y%m%d).snap
+kubectl exec -n openbao openbao-0 -- ls -l /tmp/pre-migrate.snap   # OpenBao 2.5 has only `save` and `restore` — no `inspect`; a sane size is the check
+kubectl cp openbao/openbao-0:/tmp/pre-migrate.snap ./openbao-pre-migrate-$(date +%Y%m%d).snap   # gke: `ws k8s cp` under the armed scope instead
+```
+
+Then compare the copy's size to the in-pod size before going on.
+
+```bash
 ```
 
 Keep the copy off-cluster until step 5 has passed; `bao operator raft snapshot restore` is the way back if the migration goes wrong. (Windows/Git Bash: `MSYS_NO_PATHCONV=1` in front of the `kubectl exec`/`cp` lines.)
