@@ -45,9 +45,11 @@ The deeper platform credentials, and how each is held. Kept here because "is thi
 
 Two rows worth acting on: XenForo already *has* an `ExternalSecret` written (`xenforo-k8s/kustomize/components/secrets-openbao/externalsecret.yaml`) but the live cluster is still running the plain-Secret flavor — it has not been cut over. Gitea's admin credential is the bootstrap dependency that OpenBao itself sits behind, so it is genuinely awkward to move rather than merely unmoved.
 
-## Not everything can be keyless, and one thing genuinely cannot
+## Storage integrations are keyless — with one exception that cannot be
 
-The platform's default is Workload Identity with nothing stored — three of the rows above. So when a static credential appears, the question is always "why wasn't this keyless?", and there is now exactly one place where the honest answer is *it cannot be*:
+Scope this claim carefully, because the inventory holds several non-keyless rows and they are not the same kind of thing. Harbor and the Leidangr OIDC values are static *by nature* — there is no identity to federate, they are just secrets. Gitea's admin credential is a bootstrap dependency. Neither of those is a keyless failure.
+
+**Cloud storage integrations** are the category where keyless is the established default: three rows above reach GCP with nothing stored at all (ESO→OpenBao auth, Postgres `repo2`, Velero→GCS). So when a *storage* integration turns up holding a static credential, the question is always "why wasn't this keyless?" — and there is exactly one case where the honest answer is *it cannot be*:
 
 **The Percona PXC operator has no native GCS backend.** It supports exactly `filesystem`, `s3`, `azure`. The Percona *Postgres* operator supports `gcs:` with `gcs-key-type: auto`, which is why `repo2` next door is keyless. MySQL therefore reaches GCS through its **S3-interoperability endpoint** (`https://storage.googleapis.com`), and that API authenticates with **HMAC keys** — which Workload Identity cannot issue. Swapping the `credentialsSecret` for an `iam.gke.io/gcp-service-account` annotation does not work; `xbcloud` 403s.
 
@@ -57,7 +59,14 @@ The mitigation is blast radius, not elimination:
 - the key lives in OpenBao, materialized by ESO, never in Git
 - a recovery copy in the workspace `.env`, because of the seal posture below
 
-Reach for this shape only when the consuming operator genuinely has no keyless path. Check the operator's storage types before assuming it needs a key.
+**Custody of that recovery copy**, since a second copy of a live credential deserves stating rather than implying. It lives in the *yggdrasil workspace* `.env` — not in this repo or any component repo — which is:
+
+- **untracked and ignored.** `.env` is line 2 of the workspace `.gitignore`, and `git ls-files` confirms it has never been tracked. Component repos do not ignore `.env`, which is fine because the file is not in them; do not "fix" that by scattering the credential into repo-local `.env` files.
+- **local-only and permission-restricted — `chmod 600`.** It was `0644` when the MySQL key was first appended, meaning any local account could read it. Check it after anything appends to it; a `>>` does not change an existing file's mode.
+
+It is deliberately *not* in the operator's password manager. That guidance covers the OpenBao shares and root token, which gate the whole substrate. This key gates one bucket and is reconstructible by minting a new HMAC key for the same GSA, so the cheap local copy is proportionate.
+
+Reach for this shape only when the consuming operator genuinely has no keyless path. Check the operator's supported storage types before assuming it needs a key.
 
 ## Sealing, explained from zero
 
@@ -134,7 +143,7 @@ Both are accepted for the staging substrate and synthetic data only. Treat them 
 
 ## How to use it (the 90% case)
 
-**Put a value in** (any path under `secret/`):
+**Put a value in** (any path under `secret/`). This is the shortest form, shown for orientation — it puts both the token and the value in the container's process arguments, so use the stdin form below for anything that is not a throwaway:
 
 ```bash
 ROOT_TOKEN=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.root_token}' | base64 -d)
@@ -143,29 +152,37 @@ kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv put secr
 
 Using the root token here is a staging-posture convenience. Best practice reserves the root token for bootstrap and recovery; if you're doing routine value management (or copying this pattern toward production), mint a scoped operator token instead — `bao policy write kv-write` with write capabilities over `secret/data/*`, then `bao token create -policy=kv-write -ttl=8h` — and use that as `BAO_TOKEN`.
 
-**Prefer stdin for anything real.** The `api-key=swordfish` form above is fine for the demo value, but a `key=value` argument lands in the container's process arguments, where anything that can read `/proc` on that pod sees it. `bao kv put <path> -` reads a JSON object from stdin instead, so the value never becomes an argv:
+**Prefer stdin for anything real.** The `api-key=swordfish` form above is fine for the demo value, but a `key=value` argument lands in the container's process arguments, where anything able to read `/proc` on that node sees it.
+
+**And the token is argv too.** `env BAO_TOKEN="$ROOT_TOKEN" bao …` exposes the *root token* exactly the same way — worse, since it gates everything rather than one value. Moving only the payload to stdin and leaving the token in `env` fixes the smaller half of the problem. Send both over stdin: first line the token, the rest the JSON payload.
 
 ```bash
-printf '{"AWS_ACCESS_KEY_ID":"…","AWS_SECRET_ACCESS_KEY":"…"}' \
-  | kubectl exec -i -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" \
-      bao kv put secret/mimir-mysql-backup -
+{ printf '%s\n' "$ROOT_TOKEN"; cat payload.json; } \
+  | kubectl exec -i -n openbao openbao-0 -- \
+      sh -c 'read -r T; BAO_TOKEN="$T" exec bao kv put secret/mimir-mysql-backup -'
 ```
 
-Better still, keep the value in a file and redirect, so it is never in shell history either. Under the `ws k8s` guard the `-i` flag must come *after* the pod name (`ws k8s exec -n openbao openbao-0 -i -- …`) — the guard rejects unrecognised options positioned before the resource.
+`read -r T` consumes the first line; `BAO_TOKEN="$T"` is a shell assignment *inside* the container, so it reaches the process environment without ever appearing in any command line. Keeping the payload in a file rather than a literal also keeps it out of shell history. Under the `ws k8s` guard, `-i` must come *after* the pod name (`ws k8s exec -n openbao openbao-0 -i -- …`) — the guard rejects unrecognised options positioned before the resource.
 
-**Verify by round-trip, not by eye.** Read the value back and compare it programmatically to the source rather than printing it:
+**Verify by round-trip, with a check that actually fails.** Printing the stored JSON proves only that the read succeeded — a successful read of a *truncated* value looks identical. Compare against the source and exit non-zero on mismatch:
 
 ```bash
-kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" \
-  bao kv get -format=json secret/mimir-mysql-backup
+expected=$(python3 -c 'import json;print(json.load(open("payload.json"))["AWS_ACCESS_KEY_ID"])')
+got=$(printf '%s\n' "$ROOT_TOKEN" \
+  | kubectl exec -i -n openbao openbao-0 -- \
+      sh -c 'read -r T; BAO_TOKEN="$T" bao kv get -field=AWS_ACCESS_KEY_ID secret/mimir-mysql-backup')
+
+[ "$got" = "$expected" ] || { echo "MISMATCH — do not proceed" >&2; exit 1; }
 ```
 
-Diff the fields against wherever the value came from. A truncated or newline-mangled credential looks completely normal in a terminal and fails much later, at the point of use, with an authentication error that implicates the wrong thing.
+`-field=` returns the bare value, so the comparison is exact rather than a JSON-shaped near-match. A truncated or newline-mangled credential looks completely normal in a terminal and fails much later, at the point of use, with an authentication error that implicates the wrong component entirely.
 
 **Inventory what is there** — useful before adding a value, and the source of the table at the top of this doc (paths and key names only, never values):
 
 ```bash
-kubectl exec -n openbao openbao-0 -- env BAO_TOKEN="$ROOT_TOKEN" bao kv list secret/
+printf '%s\n' "$ROOT_TOKEN" \
+  | kubectl exec -i -n openbao openbao-0 -- \
+      sh -c 'read -r T; BAO_TOKEN="$T" bao kv list secret/'
 ```
 
 **Consume it from any namespace** — declare an ExternalSecret; ESO materializes and refreshes a plain Secret next to your workload:
