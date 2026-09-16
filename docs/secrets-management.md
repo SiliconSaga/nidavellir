@@ -151,7 +151,7 @@ Then compare the copy's size to the in-pod size, and stop if they differ:
 
 ```bash
 snapshot="./openbao-pre-migrate-$(date +%Y%m%d).snap"
-pod_bytes="$(kubectl exec -n openbao openbao-0 -- wc -c < /dev/null /tmp/pre-migrate.snap | awk '{print $1}')"
+pod_bytes="$(kubectl exec -n openbao openbao-0 -- wc -c /tmp/pre-migrate.snap | awk '{print $1}')"
 local_bytes="$(wc -c < "$snapshot")"
 printf 'in-pod: %s bytes; local: %s bytes\n' "$pod_bytes" "$local_bytes"
 [ "$pod_bytes" -gt 0 ] && [ "$pod_bytes" -eq "$local_bytes" ] || { echo "snapshot copy incomplete — do not continue" >&2; false; }
