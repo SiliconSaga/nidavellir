@@ -322,7 +322,7 @@ The two usual first-run failures: `permission denied` on login means the `openba
 
 ### Restoring
 
-Two procedures, and the runbook is only real because the second was exercised on the local homelab (go-live plan, Task 7).
+Two procedures. The first was exercised on the local homelab on 2026-09-17: a fresh init under the static seal, one manual `openbao-snapshot` run to Garage (20.9 KB), a marker written afterwards, then a restore of that object from a one-off pod running the agent image (it carries both s3cmd and `bao`, with `BAO_TOKEN` from the `openbao-init` Secret) — the canary and the seeded OIDC path came back, the marker was gone, the instance stayed unsealed and ESO's store stayed valid. One detail worth knowing: a Job created with `kubectl create job --from=cronjob/...` does count toward the CronJob's last-success time, so a manual run also satisfies the tile and the alerts.
 
 **From a Raft snapshot** (the vault's own export — the normal path). Target: an initialized, unsealed instance whose seal can open the snapshot: the same KMS key on gke, the same `openbao-seal-key` on homelab.
 
