@@ -285,22 +285,63 @@ Rolling back: set `parameters.seal: shamir` on the claim, hydrate, delete the po
 
 ### Fresh cluster (or wiped PVC) — full init
 
-Run once per OpenBao instance. On a **live env**, have the password manager open — shares go there first.
+Run once per OpenBao instance, from the nordri checkout, with the kubectl context on the right cluster (the scripts refuse a mismatch). On homelab, `bootstrap.sh` does all of this itself (Layer 5b); on gke it is deliberately a human step so the material reaches the password safe:
 
 ```bash
-kubectl exec -n openbao openbao-0 -- bao operator init -key-shares=3 -key-threshold=2 -format=json
-# → save unseal_keys_b64 + root_token (password manager FIRST on live envs)
-# unseal with 2 shares (commands above), then park the material in-cluster:
-kubectl create secret generic openbao-init -n openbao --from-file=init.json=<saved-json> --from-literal=root_token=<token>
+./openbao-init.sh gke ~/openbao-init.json          # init once; parks Secret openbao/openbao-init AND writes the JSON to that file (0600)
+# → move the file's contents (recovery keys + root token) into the shared password safe, then: rm ~/openbao-init.json
+./openbao-configure.sh gke realm-siliconsaga       # KV v2, Kubernetes auth, eso-read/eso-role, openbao-backup, secret/demo, realm seeds
 ```
 
-Then the one-time mount/auth/policy setup (KV v2 at `secret/`, Kubernetes auth, `eso-read` policy + `eso-role`): the exact command sequence lives in the OpenBao/ESO setup plan, realm-siliconsaga `docs/plans/2026-06-09-leidangr-phase1a-openbao-eso-plan.md`, Task A1.5 Step 3. Seed `secret/demo` with `foo=bar` so the kuttl smoke and the demo ExternalSecret go green.
+Under `seal: auto` the instance unseals itself and the three shares in the init output are **recovery** keys; under Shamir the script unseals from the parked shares. `openbao-init.sh` refuses an initialized instance — init material exists exactly once — and never prints it. Custody is realm ADR 0002's in-cluster Secret plus the safe: two copies in two failure domains (the reasoning is in the realm's go-live design, `docs/plans/2026-09-16-openbao-go-live-design.md`).
 
 Windows/Git Bash note: prefix `kubectl exec`/`kubectl cp` commands that carry absolute in-container paths with `MSYS_NO_PATHCONV=1`, or MSYS rewrites them to Windows paths (see realm dev-setup → MSYS Path Mangling).
 
-### Lost the unseal shares
+### Backups — daily Raft snapshots
 
-Staging: accept the loss — delete the openbao PVC and Helm release pod state, let the composition reconcile, re-init. Live: this is the disaster the password-manager copy exists to prevent; if both copies are truly gone the data is cryptographically unrecoverable (that's the design), so rebuild and re-populate.
+Two layers, the shape every stateful service here follows:
+
+- **Engine-level**: the OpenBao Helm chart's snapshot agent, enabled by the composition. CronJob `openbao/openbao-snapshot` logs in through Kubernetes auth as ServiceAccount `openbao-snapshot` with role `openbao-backup` (read on `sys/storage/raft/snapshot`, nothing else — the job can copy the vault out encrypted and read no secret), runs `bao operator raft snapshot save`, uploads with s3cmd at 05:00 UTC, and deletes objects older than 30 days. One bucket per environment: `gs://<project>-openbao-backups/openbao/` on gke over the GCS S3-interop endpoint with an HMAC key (`./gke-provision.sh openbao-backup-setup` mints it into Secret `openbao/openbao-backup-s3`; keyless is impossible because s3cmd speaks only S3, the same reasoning as Mimir's MySQL backups), Garage bucket `openbao-backups` on homelab (bootstrap Layer 5 creates key, bucket and the same Secret).
+- **Disk-level**: Velero's 06:00 UTC schedule snapshots the `openbao` PVC on gke, crash-consistent. It is the net under the engine backup, not a substitute: the Raft snapshot is the vault's own export and restores into any instance whose seal can open it.
+
+The snapshot is ciphertext sealed by the barrier; the bucket holds nothing readable without the KMS key (gke) or the static key (homelab). Heimdall alerts `OpenBaoSnapshotStale` (no success in 36h) and `OpenBaoSnapshotNeverSucceeded` (CronJob present, never succeeded, 26h), and `HeimdallDatabaseBackupFailed` covers a failed upload Job; the Backups dashboard has a "time since last OpenBao Raft snapshot" tile.
+
+Prove it rather than assume it — after the first configure, and after any change to the bucket, key or role:
+
+```bash
+kubectl create job --from=cronjob/openbao-snapshot -n openbao openbao-snapshot-manual
+kubectl -n openbao wait --for=condition=complete job/openbao-snapshot-manual --timeout=5m
+kubectl -n openbao logs job/openbao-snapshot-manual                     # "upload: ... -> s3://..." from s3cmd
+gcloud storage ls gs://<project>-openbao-backups/openbao/                 # gke
+MSYS_NO_PATHCONV=1 kubectl exec -n garage garage-0 -c garage -- /garage bucket info openbao-backups   # homelab: Objects > 0
+kubectl -n openbao delete job openbao-snapshot-manual
+```
+
+The two usual first-run failures: `permission denied` on login means the `openbao-backup` role is missing (run `openbao-configure.sh`); an s3cmd 403 means the Secret's key does not match the bucket's grant (re-run the provisioning step).
+
+### Restoring
+
+Two procedures, and the runbook is only real because the second was exercised on the local homelab (go-live plan, Task 7).
+
+**From a Raft snapshot** (the vault's own export — the normal path). Target: an initialized, unsealed instance whose seal can open the snapshot: the same KMS key on gke, the same `openbao-seal-key` on homelab.
+
+```bash
+gcloud storage cp gs://<project>-openbao-backups/openbao/bao_<date>.snapshot ./restore.snapshot        # gke
+# homelab: any S3 client against garage.garage.svc.cluster.local:3900 with the openbao-backup-key credentials, or `kubectl port-forward -n garage svc/garage 3900`
+MSYS_NO_PATHCONV=1 kubectl cp ./restore.snapshot openbao/openbao-0:/tmp/restore.snapshot
+MSYS_NO_PATHCONV=1 kubectl exec -n openbao openbao-0 -- sh -c 'BAO_TOKEN="$(cat /dev/stdin)" bao operator raft snapshot restore /tmp/restore.snapshot' < <(kubectl get secret -n openbao openbao-init -o jsonpath='{.data.root_token}' | base64 --decode)
+kubectl exec -n openbao openbao-0 -- rm /tmp/restore.snapshot
+```
+
+The restore replaces the whole Raft state, including the auth mounts and the parked-token's validity: after it, the root token that is valid is the one from the instance the snapshot was taken on. When restoring into the *same* instance (the common case: a bad write, a lost mount) nothing changes. When restoring into a **re-initialized** instance — same seal, fresh init — the snapshot's root token differs from the new instance's, so `-force` is required, the Secret `openbao-init` must be replaced with the material the snapshot was taken under (the safe), and ESO's `ClusterSecretStore` recovers by itself since its Kubernetes-auth role travels inside the snapshot. If the seal is *different* (a rebuilt KMS key, a new static key) the snapshot cannot be opened at all without the recovery keys from the safe: `bao operator raft snapshot restore -force` followed by `bao operator unseal` with those recovery keys.
+
+**From Velero** (disk-level, gke). A Velero restore of the `openbao` namespace brings back the PVC and the `openbao-init` Secret together; under `seal: auto` the pod unseals itself as long as the KMS key still exists. Crash-consistent: a snapshot taken mid-write can need the Raft snapshot path above instead.
+
+And the sentence that matters most: **the KMS key (gke) or `openbao-seal-key` Secret (homelab) is what opens every copy of the vault.** The KMS key cannot be deleted outright (destruction is scheduled, 24-hour minimum) and its key ring can never be deleted, which is why the setup uses one dedicated key with one narrow grant. Losing the homelab static key Secret with no copy elsewhere means every homelab snapshot is unreadable — acceptable for a resettable cluster, and the reason no homelab holds anything that is not regenerable.
+
+### Lost the recovery keys (or, on Shamir, the unseal shares)
+
+Staging: accept the loss — delete the openbao PVC and Helm release pod state, let the composition reconcile, re-init. Live: this is the disaster the shared-safe copy exists to prevent; if the in-cluster Secret, the safe and the Velero copy of the Secret are all gone, the data is cryptographically unrecoverable (that's the design), so rebuild and re-populate. Under the auto seal the daily unseal path does not need them at all — only `generate-root` and a seal migration do.
 
 ## Verifying and testing
 

@@ -56,6 +56,29 @@ check shamir "$tmp_shamir" no 'seal "static"'
 check shamir "$tmp_shamir" no 'iam.gke.io/gcp-service-account'
 check shamir "$tmp_shamir" no 'serviceAccount:'
 
+# snapshot agent: enabled on every environment and under either seal, with
+# the per-environment S3 target. The Secret name and role are contracts with
+# nordri (bootstrap Layer 5 / gke-provision.sh openbao-backup-setup, and
+# lib/openbao.sh's openbao-backup role).
+for f in "$tmp_home" "$tmp_gke" "$tmp_shamir"; do
+    check agent "$f" yes 'snapshotAgent:'
+    check agent "$f" yes 's3CredentialsSecret: openbao-backup-s3'
+    check agent "$f" yes 'baoRole: openbao-backup'
+    check agent "$f" yes 'baoAuthPath: kubernetes'
+    check agent "$f" yes 's3ExpireDays: "30"'
+    check agent "$f" yes '0 5 * * *'
+done
+check gke "$tmp_gke" yes 's3Uri: s3://example-project-openbao-backups/openbao/'
+check gke "$tmp_gke" yes 's3Host: storage.googleapis.com'
+check gke "$tmp_gke" yes 's3Bucket: storage.googleapis.com'
+check gke "$tmp_gke" yes 's3cmdExtraFlag: --signature-v2'
+check gke "$tmp_gke" no  'garage.garage.svc'
+check homelab "$tmp_home" yes 's3Uri: s3://openbao-backups/openbao/'
+check homelab "$tmp_home" yes 's3Host: garage.garage.svc.cluster.local:3900'
+check homelab "$tmp_home" yes 's3Bucket: garage.garage.svc.cluster.local:3900'
+check homelab "$tmp_home" yes 's3cmdExtraFlag: --no-ssl --region=garage'
+check homelab "$tmp_home" no  'storage.googleapis.com'
+
 # unchanged seams from before this change
 check homelab "$tmp_home" yes 'storageClass: local-path'
 check gke     "$tmp_gke"  yes 'openbao.cmdbee.org'
