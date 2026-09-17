@@ -6,3 +6,12 @@ metadata:
 spec:
   parameters:
     storageSize: "2Gi"
+    # The graduation (realm ADR 0004, go-live 2026-09-16): gke seals through
+    # Cloud KMS via Workload Identity (nordri gke-provision.sh
+    # openbao-seal-setup must have run), homelab through the static key in
+    # Secret openbao-seal-key (bootstrap Layer 2.9). An instance initialized
+    # under this seal holds recovery keys, not unseal keys; one initialized
+    # under shamir comes back sealed after its pod is restarted with this
+    # config and needs the one-time `unseal -migrate` in
+    # docs/secrets-management.md, run against that restarted pod.
+    seal: auto

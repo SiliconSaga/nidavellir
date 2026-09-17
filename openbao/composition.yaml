@@ -59,8 +59,9 @@ spec:
           {{- if and (eq $seal "auto") (ne $env "gke") (ne $env "homelab") -}}
           {{ fail (printf "seal: auto has no seal configuration for environment %q (expected gke or homelab); set parameters.seal: shamir to opt out" $env) }}
           {{- end -}}
-          {{- if and (eq $seal "auto") (eq $env "gke") (or (not $identity.gcpProject) (hasPrefix "__" $identity.gcpProject)) -}}
-          {{ fail "cluster-identity gcpProject is required for the gcpckms seal on gke (stamped by nordri hydration from GCP_PROJECT; the raw placeholder counts as missing)" }}
+          {{- /* Needed on gke whatever the seal: the snapshot agent's bucket name derives from it, and so does the gcpckms seal. */ -}}
+          {{- if and (eq $env "gke") (or (not $identity.gcpProject) (hasPrefix "__" $identity.gcpProject)) -}}
+          {{ fail "cluster-identity gcpProject is required on gke for the snapshot bucket (<project>-openbao-backups) and the gcpckms seal (stamped by nordri hydration from GCP_PROJECT; the raw placeholder counts as missing)" }}
           {{- end -}}
           {{- if and (eq $seal "auto") (eq $env "gke") (not $identity.gcpRegion) -}}
           {{ fail "cluster-identity gcpRegion is required for the gcpckms seal on gke (the region of the openbao key ring)" }}
@@ -82,6 +83,65 @@ spec:
                 fullnameOverride: openbao
                 injector:
                   enabled: false
+                # Daily Raft snapshot to a dedicated bucket per environment
+                # (realm go-live design, 2026-09-16). This is the chart's own
+                # agent: CronJob `openbao-snapshot` logs in through Kubernetes
+                # auth as ServiceAccount `openbao-snapshot` with role
+                # `openbao-backup` (nordri lib/openbao.sh grants it read on
+                # sys/storage/raft/snapshot and nothing else), runs `bao
+                # operator raft snapshot save`, uploads with s3cmd and expires
+                # objects older than s3ExpireDays. Independent of $seal — a
+                # Shamir instance can snapshot too. 05:00 UTC, an hour before
+                # Velero's disk snapshot, which stays the crash-consistent net.
+                #
+                # s3cmd's --host-bucket is a DNS-style TEMPLATE; a plain host
+                # equal to --host makes it path-style, which the GCS S3-interop
+                # endpoint and Garage both want. The credential Secret is parked
+                # by nordri (gke-provision.sh openbao-backup-setup; bootstrap
+                # Layer 5 on homelab) with the chart's key names,
+                # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. Agent contract
+                # read from ghcr.io/openbao/openbao-snapshot-agent:0.3.0's
+                # /bao-snapshot.sh and a `helm template` of chart 0.28.3.
+                snapshotAgent:
+                  enabled: true
+                  schedule: "0 5 * * *"
+                  s3CredentialsSecret: openbao-backup-s3
+                  config:
+                    baoAuthPath: kubernetes
+                    baoRole: openbao-backup
+                    {{- if eq $env "gke" }}
+                    # No S3_EXPIRE_DAYS on gke: the bucket's 30-day lifecycle
+                    # rule (gke-provision.sh openbao-backup-setup) does the
+                    # expiry, so the agent's identity needs create and read
+                    # only — it cannot delete or overwrite history.
+                    s3ExpireDays: ""
+                    s3Host: storage.googleapis.com
+                    s3Bucket: storage.googleapis.com
+                    s3Uri: s3://{{ $identity.gcpProject }}-openbao-backups/openbao/
+                    # GCS interop accepts HMAC keys with either signature
+                    # version; v2 is the one it has served longest and needs
+                    # no region lookup. Drop the flag if a run reports it refused.
+                    s3cmdExtraFlag: "--signature-v2"
+                    {{- else }}
+                    # Garage has no lifecycle rule provisioned, so the agent
+                    # expires objects itself; its key has read/write on the
+                    # bucket for that reason.
+                    s3ExpireDays: "30"
+                    s3Host: garage.garage.svc.cluster.local:3900
+                    s3Bucket: garage.garage.svc.cluster.local:3900
+                    s3Uri: s3://openbao-backups/openbao/
+                    # Plain HTTP in-cluster, and Garage checks the SigV4 region
+                    # against its configured s3_region ("garage" — the same
+                    # value velero-homelab passes).
+                    s3cmdExtraFlag: "--no-ssl --region=garage"
+                    {{- end }}
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 64Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
                 server:
                   {{- if and (eq $seal "auto") (eq $env "gke") }}
                   # Workload Identity: the KSA the chart creates (plain `openbao`
