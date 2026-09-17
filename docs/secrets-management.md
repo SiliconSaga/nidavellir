@@ -33,12 +33,13 @@ The deeper platform credentials, and how each is held. Kept here because "is thi
 | What | Where the truth lives | How it reaches the workload | Keyless? |
 | --- | --- | --- | --- |
 | Shared MySQL off-site backup (GCS HMAC) | OpenBao `secret/mimir-mysql-backup` | ESO → `mimir-mysql-backup-s3` in `mimir` | ❌ **cannot be** — see below |
+| OpenBao Raft snapshot upload (GCS HMAC on gke, Garage key on homelab) | `openbao-backup-s3` Secret (ns `openbao`), parked by nordri (`gke-provision.sh openbao-backup-setup` / bootstrap Layer 5) — not in OpenBao, since the job that uses it is the one that backs OpenBao up | the chart's `openbao-snapshot` CronJob, `s3CredentialsSecret` | ❌ **cannot be** — s3cmd speaks only S3, same reason as MySQL |
 | Harbor | OpenBao `secret/harbor` | ESO → `nidavellir/eitri/harbor/externalsecret.yaml` | n/a (static by nature) |
 | Leidangr OIDC | OpenBao `secret/leidangr/…` | ESO → `keycloak/leidangr-oidc-realm-secrets` | n/a |
 | ESO → OpenBao auth | nothing stored | Kubernetes auth, SA token exchange | ✅ |
 | Shared Postgres off-site backup | nothing stored | Workload Identity, `repo2-gcs-key-type: auto` | ✅ |
 | Velero → GCS | nothing stored | Workload Identity, `credentials.useSecret: false` | ✅ |
-| OpenBao shares + root token | `openbao-init` Secret (ns `openbao`) + operator password manager | by hand at unseal time; recovery keys once graduated to `seal: auto` | ❌ by design (ADR 0002 → 0004) |
+| OpenBao recovery keys + root token | `openbao-init` Secret (ns `openbao`) + the shared password safe (written by `nordri/openbao-init.sh`) | the parked root token, by the configure/seed scripts; recovery keys only for `generate-root` and seal migration under `seal: auto` | ❌ by design (ADR 0002 → 0004) |
 | Gitea admin | `gitea-admin-credentials` Secret (ns `gitea`) | read by the hydration script | ❌ not in OpenBao |
 | **XenForo DB password** | plain Secret, hand-applied | `xenforo-secrets` | ❌ **not in OpenBao** |
 | Grafana admin | see `heimdall/docs/grafana-admin-credentials.md` | chart-managed Secret | ❌ not in OpenBao |
