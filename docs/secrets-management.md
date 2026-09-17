@@ -289,8 +289,8 @@ Rolling back: set `parameters.seal: shamir` on the claim, hydrate, delete the po
 Run once per OpenBao instance, from the nordri checkout, with the kubectl context on the right cluster (the scripts refuse a mismatch). On homelab, `bootstrap.sh` does all of this itself (Layer 5b); on gke it is deliberately a human step so the material reaches the password safe:
 
 ```bash
-./openbao-init.sh gke ~/openbao-init.json          # init once; parks Secret openbao/openbao-init AND writes the JSON to that file (0600)
-# → move the file's contents (recovery keys + root token) into the shared password safe, then: rm ~/openbao-init.json
+./openbao-init.sh gke ~/openbao-init/gke.json      # init once; parks Secret openbao/openbao-init AND writes the JSON to that file (0600, in a 0700 directory it creates)
+# → move the file's contents (recovery keys + root token) into the shared password safe, then: rm -r ~/openbao-init
 ./openbao-configure.sh gke realm-siliconsaga       # KV v2, Kubernetes auth, eso-read/eso-role, openbao-backup, secret/demo, realm seeds
 ```
 
@@ -302,7 +302,7 @@ Windows/Git Bash note: prefix `kubectl exec`/`kubectl cp` commands that carry ab
 
 Two layers, the shape every stateful service here follows:
 
-- **Engine-level**: the OpenBao Helm chart's snapshot agent, enabled by the composition. CronJob `openbao/openbao-snapshot` logs in through Kubernetes auth as ServiceAccount `openbao-snapshot` with role `openbao-backup` (read on `sys/storage/raft/snapshot`, nothing else — the job can copy the vault out encrypted and read no secret), runs `bao operator raft snapshot save`, uploads with s3cmd at 05:00 UTC, and deletes objects older than 30 days. One bucket per environment: `gs://<project>-openbao-backups/openbao/` on gke over the GCS S3-interop endpoint with an HMAC key (`./gke-provision.sh openbao-backup-setup` mints it into Secret `openbao/openbao-backup-s3`; keyless is impossible because s3cmd speaks only S3, the same reasoning as Mimir's MySQL backups), Garage bucket `openbao-backups` on homelab (bootstrap Layer 5 creates key, bucket and the same Secret).
+- **Engine-level**: the OpenBao Helm chart's snapshot agent, enabled by the composition. CronJob `openbao/openbao-snapshot` logs in through Kubernetes auth as ServiceAccount `openbao-snapshot` with role `openbao-backup` (read on `sys/storage/raft/snapshot`, nothing else — the job can copy the vault out encrypted and read no secret), runs `bao operator raft snapshot save` and uploads with s3cmd at 05:00 UTC. Retention is 30 days either way, but by different hands: on gke the bucket's lifecycle rule expires objects and the agent's identity can only create and read (no delete, no overwrite — a compromised backup pod cannot erase history); on homelab the agent deletes expired objects itself, since Garage has no lifecycle rule provisioned. One bucket per environment: `gs://<project>-openbao-backups/openbao/` on gke over the GCS S3-interop endpoint with an HMAC key (`./gke-provision.sh openbao-backup-setup` mints it into Secret `openbao/openbao-backup-s3`; keyless is impossible because s3cmd speaks only S3, the same reasoning as Mimir's MySQL backups), Garage bucket `openbao-backups` on homelab (bootstrap Layer 5 creates key, bucket and the same Secret).
 - **Disk-level**: Velero's 06:00 UTC schedule snapshots the `openbao` PVC on gke, crash-consistent. It is the net under the engine backup, not a substitute: the Raft snapshot is the vault's own export and restores into any instance whose seal can open it.
 
 The snapshot is ciphertext sealed by the barrier; the bucket holds nothing readable without the KMS key (gke) or the static key (homelab). Heimdall alerts `OpenBaoSnapshotStale` (no success in 36h) and `OpenBaoSnapshotNeverSucceeded` (CronJob present, never succeeded, 26h), and `HeimdallDatabaseBackupFailed` covers a failed upload Job; the Backups dashboard has a "time since last OpenBao Raft snapshot" tile.

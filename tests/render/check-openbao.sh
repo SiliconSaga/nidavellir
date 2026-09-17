@@ -69,9 +69,13 @@ for f in "$tmp_home" "$tmp_gke" "$tmp_shamir"; do
     check agent "$f" yes 's3CredentialsSecret: openbao-backup-s3'
     check agent "$f" yes 'baoRole: openbao-backup'
     check agent "$f" yes 'baoAuthPath: kubernetes'
-    check agent "$f" yes 's3ExpireDays: "30"'
     check agent "$f" yes '0 5 * * *'
 done
+# Retention: the agent expires objects only on homelab (Garage has no lifecycle
+# rule); on gke the bucket lifecycle rule does it and the identity cannot delete.
+check homelab "$tmp_home" yes 's3ExpireDays: "30"'
+check gke "$tmp_gke" no  's3ExpireDays: "30"'
+check gke "$tmp_gke" yes 's3ExpireDays: ""'
 check gke "$tmp_gke" yes 's3Uri: s3://example-project-openbao-backups/openbao/'
 check gke "$tmp_gke" yes 's3Host: storage.googleapis.com'
 check gke "$tmp_gke" yes 's3Bucket: storage.googleapis.com'

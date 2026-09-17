@@ -109,10 +109,12 @@ spec:
                   config:
                     baoAuthPath: kubernetes
                     baoRole: openbao-backup
-                    # The agent expires objects itself; gke also carries a
-                    # 30-day bucket lifecycle rule as the backstop.
-                    s3ExpireDays: "30"
                     {{- if eq $env "gke" }}
+                    # No S3_EXPIRE_DAYS on gke: the bucket's 30-day lifecycle
+                    # rule (gke-provision.sh openbao-backup-setup) does the
+                    # expiry, so the agent's identity needs create and read
+                    # only — it cannot delete or overwrite history.
+                    s3ExpireDays: ""
                     s3Host: storage.googleapis.com
                     s3Bucket: storage.googleapis.com
                     s3Uri: s3://{{ $identity.gcpProject }}-openbao-backups/openbao/
@@ -121,6 +123,10 @@ spec:
                     # no region lookup. Drop the flag if a run reports it refused.
                     s3cmdExtraFlag: "--signature-v2"
                     {{- else }}
+                    # Garage has no lifecycle rule provisioned, so the agent
+                    # expires objects itself; its key has read/write on the
+                    # bucket for that reason.
+                    s3ExpireDays: "30"
                     s3Host: garage.garage.svc.cluster.local:3900
                     s3Bucket: garage.garage.svc.cluster.local:3900
                     s3Uri: s3://openbao-backups/openbao/
