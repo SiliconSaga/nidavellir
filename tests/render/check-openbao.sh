@@ -60,8 +60,12 @@ check shamir "$tmp_shamir" no 'serviceAccount:'
 # the per-environment S3 target. The Secret name and role are contracts with
 # nordri (bootstrap Layer 5 / gke-provision.sh openbao-backup-setup, and
 # lib/openbao.sh's openbao-backup role).
+agent_enabled() { # $1=render file — `enabled: true` inside the snapshotAgent block itself
+    sed -n '/^ *snapshotAgent:/,/^ *server:/p' "$1" | grep -Fq 'enabled: true'
+}
 for f in "$tmp_home" "$tmp_gke" "$tmp_shamir"; do
     check agent "$f" yes 'snapshotAgent:'
+    if ! agent_enabled "$f"; then echo "FAIL [agent]: snapshotAgent block lacks enabled: true in $f" >&2; fail=1; fi
     check agent "$f" yes 's3CredentialsSecret: openbao-backup-s3'
     check agent "$f" yes 'baoRole: openbao-backup'
     check agent "$f" yes 'baoAuthPath: kubernetes'

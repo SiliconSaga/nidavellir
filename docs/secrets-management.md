@@ -330,11 +330,11 @@ Two procedures. The first was exercised on the local homelab on 2026-09-17: a fr
 gcloud storage cp gs://<project>-openbao-backups/openbao/bao_<date>.snapshot ./restore.snapshot        # gke
 # homelab: any S3 client against garage.garage.svc.cluster.local:3900 with the openbao-backup-key credentials, or `kubectl port-forward -n garage svc/garage 3900`
 MSYS_NO_PATHCONV=1 kubectl cp ./restore.snapshot openbao/openbao-0:/tmp/restore.snapshot
-MSYS_NO_PATHCONV=1 kubectl exec -n openbao openbao-0 -- sh -c 'BAO_TOKEN="$(cat /dev/stdin)" bao operator raft snapshot restore /tmp/restore.snapshot' < <(kubectl get secret -n openbao openbao-init -o jsonpath='{.data.root_token}' | base64 --decode)
+MSYS_NO_PATHCONV=1 kubectl exec -i -n openbao openbao-0 -- sh -c 'BAO_TOKEN="$(cat /dev/stdin)" bao operator raft snapshot restore /tmp/restore.snapshot' < <(kubectl get secret -n openbao openbao-init -o jsonpath='{.data.root_token}' | base64 --decode)
 kubectl exec -n openbao openbao-0 -- rm /tmp/restore.snapshot
 ```
 
-The restore replaces the whole Raft state, including the auth mounts and the parked-token's validity: after it, the root token that is valid is the one from the instance the snapshot was taken on. When restoring into the *same* instance (the common case: a bad write, a lost mount) nothing changes. When restoring into a **re-initialized** instance — same seal, fresh init — the snapshot's root token differs from the new instance's, so `-force` is required, the Secret `openbao-init` must be replaced with the material the snapshot was taken under (the safe), and ESO's `ClusterSecretStore` recovers by itself since its Kubernetes-auth role travels inside the snapshot. If the seal is *different* (a rebuilt KMS key, a new static key) the snapshot cannot be opened at all without the recovery keys from the safe: `bao operator raft snapshot restore -force` followed by `bao operator unseal` with those recovery keys.
+The restore replaces the whole Raft state, including the auth mounts and the parked-token's validity: after it, the root token that is valid is the one from the instance the snapshot was taken on. When restoring into the *same* instance (the common case: a bad write, a lost mount) nothing changes. When restoring into a **re-initialized** instance — same seal, fresh init — the snapshot's root token differs from the new instance's, so `-force` is required, the Secret `openbao-init` must be replaced with the material the snapshot was taken under (the safe), and ESO's `ClusterSecretStore` recovers by itself since its Kubernetes-auth role travels inside the snapshot. The seal must be the *same*: the snapshot's barrier is wrapped by the seal it was taken under, and `-force` only skips the consistency check, it does not make a different KMS key or static key able to open it — recovery keys cannot either. If the seal has changed (a rebuilt KMS key, a new static key), restore into an instance configured with the original seal material first, then run the seal migration; if the original seal material is gone, the snapshot is unreadable.
 
 **From Velero** (disk-level, gke). A Velero restore of the `openbao` namespace brings back the PVC and the `openbao-init` Secret together; under `seal: auto` the pod unseals itself as long as the KMS key still exists. Crash-consistent: a snapshot taken mid-write can need the Raft snapshot path above instead.
 
@@ -342,7 +342,11 @@ And the sentence that matters most: **the KMS key (gke) or `openbao-seal-key` Se
 
 ### Lost the recovery keys (or, on Shamir, the unseal shares)
 
-Staging: accept the loss — delete the openbao PVC and Helm release pod state, let the composition reconcile, re-init. Live: this is the disaster the shared-safe copy exists to prevent; if the in-cluster Secret, the safe and the Velero copy of the Secret are all gone, the data is cryptographically unrecoverable (that's the design), so rebuild and re-populate. Under the auto seal the daily unseal path does not need them at all — only `generate-root` and a seal migration do.
+Two different losses, and only one of them loses data:
+
+- **Recovery keys, under `seal: auto`** (the `openbao-init` Secret, the safe copy and Velero's copy of the Secret all gone): the barrier is still opened by the KMS key or `openbao-seal-key`, so the vault keeps unsealing and nothing is lost. What is blocked is every recovery-key-authorized operation — `generate-root` (the only way to mint a new root token if the parked one is also gone) and a seal migration. Do not rebuild for this; the next scheduled hardening step, a scoped operator token, is what reduces the blast radius of losing the root token.
+- **The seal material** (the KMS key destroyed, or the homelab `openbao-seal-key` Secret gone with no copy): every copy of the vault, including every Raft snapshot, is unreadable. Live: this is the disaster the KMS key's scheduled-destruction window exists to prevent. Staging: accept the loss — delete the openbao PVC, let the composition reconcile, re-init and re-seed.
+- **Shamir unseal shares** (an instance not yet graduated): below the threshold, the instance cannot be unsealed after its next restart; the data is intact on disk but locked. Same answer as the seal material: recover the shares from the safe, or rebuild.
 
 ## Verifying and testing
 
