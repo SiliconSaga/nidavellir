@@ -123,7 +123,7 @@ This substrate started on the **minimal unseal posture** (ADR 0002) and now auto
 > kubectl exec -n openbao openbao-0 -- bao status
 > ```
 >
-> **What an outage does and does not break.** An OpenBao that is sealed or unreachable cannot serve reads, so no `ExternalSecret` can *refresh*. Already-materialized Secrets persist — ESO does not delete a target on refresh failure, and `deletionPolicy: Retain` makes that explicit — so running workloads keep working. What breaks is needing to **create or recreate** a Secret during the outage; recovery is delayed, not lost. The `.env` copy of the MySQL HMAC key dates from the manual-Shamir days and now only shortens that delay.
+> **What an outage does and does not break.** An OpenBao that is sealed or unreachable cannot serve reads, so every `ExternalSecret` reports `SecretSyncedError` and leaves its target Secret exactly as it was — a failed read never touches the target, so running workloads keep working. (The two policies on the ExternalSecrets govern different cases: `deletionPolicy: Retain` keeps the target when the *remote key* is gone or the read returns no data; `creationPolicy: Owner` means the target is garbage-collected when the *ExternalSecret object itself* is deleted, which is how the realm's Keycloak Secret vanished during the 2026-09-15 prune.) What breaks is needing to **create or recreate** a Secret during the outage; recovery is delayed, not lost. The `.env` copy of the MySQL HMAC key dates from the manual-Shamir days and now only shortens that delay.
 
 ### Security limitations (read these before reusing the pattern anywhere serious)
 

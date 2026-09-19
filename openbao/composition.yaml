@@ -53,7 +53,7 @@ spec:
           {{- $storageClass := $identity.storageClass -}}
           {{- $version := .observed.composite.resource.spec.parameters.chartVersion | default "0.28.3" -}}
           {{- $size := .observed.composite.resource.spec.parameters.storageSize | default "2Gi" -}}
-          {{- /* Default matches the XRD: shamir, so a claim that says nothing keeps today's manual posture. */ -}}
+          {{- /* Default matches the XRD: shamir, so a claim that says nothing gets the pre-graduation manual posture (the committed claim says auto). */ -}}
           {{- $seal := .observed.composite.resource.spec.parameters.seal | default "shamir" -}}
           {{- $env := $identity.environment -}}
           {{- if and (eq $seal "auto") (ne $env "gke") (ne $env "homelab") -}}
