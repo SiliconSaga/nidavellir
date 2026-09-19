@@ -117,26 +117,13 @@ This substrate started on the **minimal unseal posture** (ADR 0002) and now auto
 - **GKE (live):** the same Secret exists for operational convenience, and `nordri/openbao-init.sh` also hands the same material to a 0600 file for the operator's password safe (done 2026-09-17; the file was moved into the safe and deleted). If the cluster eats the Secret, the safe copy restores it. Under `seal: auto` those are recovery keys; the daily unseal needs nothing from either copy.
 - **Auto-unseal (ADR 0004, landed with the Forgejo day-2 Phase 1):** gke holds the barrier key in Cloud KMS, reached through Workload Identity; homelab holds a static key in Secret `openbao-seal-key`. The parked `openbao-init` material remains the recovery keys and root token. The homelab posture is honest about being homelab: anyone who can read Secrets in `openbao` can unseal, exactly as before, but nobody has to.
 
-> **⚠ LIVE STATE, GKE, verified 2026-09-15: auto-unseal is available but NOT YET IN EFFECT here.**
->
-> Auto-unseal landing in Git and a given cluster actually using it are two different facts, and only the first is visible from this repo. The XRD defaults `seal` to `shamir` precisely so merging ADR 0004 is inert, so every cluster stays manual until an operator runs the graduation below. `bao status` on ttf-cluster still reports:
->
-> ```
-> Seal Type    shamir
-> Total Shares 3
-> Threshold    2
-> Active Since 2026-09-07T00:45:05Z
-> ```
->
-> `Seal Type: shamir` is the whole answer — a graduated cluster reports `gcpckms` with `Recovery Seal Type shamir`. So this cluster still needs two shares after any restart.
->
-> The reason that has not hurt yet is the `Active Since` line: the pod has not restarted in over a week, so nobody has been asked. It reads as automatic without being automatic, which is why "I thought we did the special thing on GKE" is such an easy belief to hold. Check rather than trust either recollection or this paragraph:
+> **LIVE STATE, both clusters, since 2026-09-17: auto-unseal is in effect.** Auto-unseal landing in Git and a given cluster using it are two different facts, and only the first is visible from this repo — the claim says `seal: auto`, and each instance was wiped and initialized under that seal (the go-live design's route, not the migration below). A correctly graduated cluster reports `Seal Type gcpckms` (gke) or `static` (homelab) with `Recovery Seal Type shamir`; `Seal Type shamir` would mean the claim did not reach it. Check rather than trust recollection or this paragraph:
 >
 > ```bash
 > kubectl exec -n openbao openbao-0 -- bao status
 > ```
 >
-> **What a seal does and does not break.** A sealed OpenBao cannot serve reads, so no `ExternalSecret` can *refresh*. But already-materialized Secrets persist — ESO does not delete a target on refresh failure, and `deletionPolicy: Retain` makes that explicit — so running workloads keep working while sealed. What breaks is needing to **create or recreate** a Secret during a seal. That is the scenario the `.env` recovery copy of the MySQL HMAC key exists for: it lets a backup target be rebuilt without first finding two shares.
+> **What an outage does and does not break.** An OpenBao that is sealed or unreachable cannot serve reads, so no `ExternalSecret` can *refresh*. Already-materialized Secrets persist — ESO does not delete a target on refresh failure, and `deletionPolicy: Retain` makes that explicit — so running workloads keep working. What breaks is needing to **create or recreate** a Secret during the outage; recovery is delayed, not lost. The `.env` copy of the MySQL HMAC key dates from the manual-Shamir days and now only shortens that delay.
 
 ### Security limitations (read these before reusing the pattern anywhere serious)
 
