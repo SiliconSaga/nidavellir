@@ -1,8 +1,9 @@
-# Offline-render fixture: the XRD default and the opt-out. A claim that says
-# nothing about seal (today's committed claim) renders the manual Shamir
-# posture; so does an explicit parameters.seal: shamir. Kept without the field
-# so the render exercises the default path the live cluster is on until the
-# operator graduates it.
+# Offline-render fixture: the XRD default and the opt-out — a TEST SCENARIO,
+# not live state. A claim that says nothing about seal renders the manual
+# Shamir posture; so does an explicit parameters.seal: shamir. The committed
+# claim has said seal: auto since 2026-09-17 and both clusters were initialized
+# under their auto seals; this fixture keeps the default path covered so a
+# regression there is caught even though nothing deployed uses it.
 apiVersion: nidavellir.siliconsaga.org/v1alpha1
 kind: XOpenBao
 metadata:
