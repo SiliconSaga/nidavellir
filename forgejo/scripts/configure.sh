@@ -119,6 +119,10 @@ case "$ROTATE:$secret_present:$token_valid:$named_present" in
     echo "puller token: rotated" ;;
   :true:true:true) echo "puller token: present and valid" ;;
   :false:false:false) mint_puller || exit 1; echo "puller token: minted" ;;
+  # The Secret outlived the Forgejo instance (a teardown and re-graduation, a
+  # database restore): Forgejo holds no token of that name, so minting leaves
+  # nothing untracked behind — the whole reason the refusal below exists.
+  :true:false:false) mint_puller || exit 1; echo "puller token: Secret outlived the instance; minted afresh" ;;
   *)
     echo "PullerTokenInvalid: Secret $NAMESPACE/$PULLER_SECRET present=$secret_present valid=$token_valid; Forgejo token '$PULLER_TOKEN_NAME' on $ADMIN_USERNAME present=$named_present. A token's value cannot be read back, so this Job will not mint another on its own: run it with ROTATE=puller (docs/forgejo.md)." >&2
     exit 3 ;;
@@ -176,7 +180,9 @@ done < "$REPOS_FILE"
 # ── 6. vendor mirrors: Forgejo pull-mirrors, tags included ─────────────────
 # The API cannot change a pull mirror's upstream after creation, so a mirror
 # whose original_url differs from the claim is deleted and re-migrated. A
-# mirror is derived data; nothing of ours lives in it.
+# mirror is derived data; nothing of ours lives in it. Forgejo 15.0.9 fills
+# original_url for a service: git migration (verified live); the empty case
+# is tolerated for older or different versions.
 create_mirror() { # $1 = name, $2 = upstream
   jq -n --arg n "$1" --arg u "$2" --arg o "$ORG" '{
     clone_addr: $u, repo_name: $n, repo_owner: $o, mirror: true, service: "git",

@@ -45,6 +45,7 @@ The XR is Ready only when every composed resource is; a failed Job holds it not-
 |---|---|---|---|
 | present | yes | yes | keeps it |
 | absent | — | no | mints one and creates the Secret |
+| present | no | no | the Secret outlived the instance (teardown and re-graduation, a database restore): mints one and replaces the Secret — nothing untracked is left behind |
 | anything else | | | stops with `PullerTokenInvalid` (exit 3) |
 
 "Authenticates" is checked against `GET /repos/search`, a repository-scoped endpoint: a `write:repository` token has no `read:user` scope, so `GET /user` would call a good token invalid. A token's value cannot be read back from Forgejo, so the Job never mints a replacement on its own — that would leave untracked tokens behind. Only `ROTATE=puller` does: revoke by name, mint, rewrite the Secret.
@@ -76,6 +77,8 @@ Jobs are immutable and named by a hash of their inputs (org, admin, break-glass 
 
 For each line of `forgejo-repos`: fresh `git init`, fetch Forgejo `main` (its tip becomes the lease), fetch GitHub `main`, push `refs/remotes/github/main:refs/heads/main` with `--force-with-lease=refs/heads/main:<tip>` (an empty tip when the branch does not exist yet: "must not exist"). Only `main` is written. One failing repository does not stop the others; the run exits non-zero if any failed, which `KubeJobFailed` reports.
 
+The askpass helper answers only for the Forgejo host: GitHub prompts for credentials when an upstream is missing or private, and that prompt gets no answer, so a bad `github` entry fails its own line and never sees the token.
+
 - On demand: `kubectl create job -n forgejo --from=cronjob/forgejo-puller puller-manual-$(date +%s)`.
 - Suspend: `kubectl patch cronjob -n forgejo forgejo-puller -p '{"spec":{"suspend":true}}'` — the switch Phase 3's hydration flow flips. Visible in `kubectl get cronjob`.
 
@@ -83,7 +86,7 @@ For each line of `forgejo-repos`: fresh `git init`, fetch Forgejo `main` (its ti
 
 ## Vendor mirrors
 
-Forgejo pull-mirrors (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. If `original_url` is empty for a `service: git` migration on this version, drift is not detectable and the Job says so.
+Forgejo pull-mirrors (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. On 15.0.9 `original_url` carries the clone address for a `service: git` migration (verified 2026-09-30), so drift is detectable; the script still tolerates an empty value and says so.
 
 ## Teardown
 
