@@ -11,6 +11,7 @@ Operational and design documentation for the Nidavellir platform layer (Vegvísi
 | [Cloud IAM and DNS](cloud-iam-and-dns.md) | Workload Identity + Cloud DNS — the GCP-side setup that makes the wildcard cert possible, plus the test domain (`cmdbee.org`) |
 | [Secrets Management](secrets-management.md) | OpenBao + External Secrets Operator — the sealing concept from zero, how to put/consume values, unseal + init runbooks, custody posture (test vs live) |
 | [Testing](testing.md) | Running the platform and end-to-end kuttl suites |
+| [Forgejo](forgejo.md) | The durable-tier git platform — what renders at which maturity, credentials born in OpenBao, the puller, token rotation, teardown, troubleshooting |
 | [Platform Gitea](platform-gitea.md) | **Superseded.** Early notes on hardening the seed Gitea; the design of record is the realm's [Forgejo day-2 design](https://github.com/SiliconSaga/realm-siliconsaga/blob/main/docs/plans/2026-09-07-forgejo-day2-design.md) |
 
 ## Where to start

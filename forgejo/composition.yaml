@@ -1,0 +1,647 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xforgejo-durable
+  labels:
+    provider: forgejo
+spec:
+  mode: Pipeline
+  compositeTypeRef:
+    apiVersion: nidavellir.siliconsaga.org/v1alpha1
+    kind: XForgejo
+  pipeline:
+
+  # ──────────────────────────────────────────────────────────
+  # Step 0: cluster identity → context (environment, domain,
+  # storageClass, maturity, optional pullerSchedule).
+  # ──────────────────────────────────────────────────────────
+  - step: load-cluster-identity
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref:
+            name: cluster-identity
+
+  # ──────────────────────────────────────────────────────────
+  # Step 1: everything, gated on maturity (realm Forgejo day-2
+  # design, Phase 2). Below durable the template renders NOTHING,
+  # so the claim can sit on a bootstrap cluster indefinitely. A
+  # render that returns nothing while composed resources exist
+  # would have Crossplane delete the release, the PVC and the
+  # database, so that case fails unless the claim says
+  # allowTeardown: true.
+  #
+  # Ordering is by observed readiness, not sync-waves: the Release
+  # is emitted once the admin Secret and the DataService are Ready,
+  # the configure Job once the Release is Ready, the puller once the
+  # configure Job succeeded. Jobs report Ready through a CEL query
+  # on status.succeeded, so a failed Job holds the XR not-Ready.
+  #
+  # Scripts come from ConfigMap forgejo-scripts (kustomization.yaml).
+  # jobGeneration is the manual cache-buster: Jobs are immutable and
+  # named by a hash of their inputs, so bump it whenever a script's
+  # logic changes, or the old Job keeps its name and never re-runs.
+  # ──────────────────────────────────────────────────────────
+  - step: render-forgejo
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $xr := .observed.composite.resource -}}
+          {{- $p := $xr.spec.parameters -}}
+          {{- $name := $xr.metadata.name -}}
+          {{- $observed := .observed.resources | default dict -}}
+          {{- $maturity := $identity.maturity | default "bootstrap" -}}
+          {{- if not (has $maturity (list "bootstrap" "durable" "full")) -}}
+          {{ fail (printf "cluster-identity maturity %q is not one of bootstrap, durable, full" $maturity) }}
+          {{- end -}}
+          {{- if not (has $maturity (list "durable" "full")) -}}
+          {{- if and (gt (len $observed) 0) (not $p.allowTeardown) -}}
+          {{ fail (printf "cluster-identity maturity is %q but %d Forgejo resources are composed; rendering nothing would delete the release, its PVC and the database. Set parameters.allowTeardown: true on the claim to tear down on purpose." $maturity (len $observed)) }}
+          {{- end -}}
+          {{- else -}}
+          {{- if not $p.org -}}{{ fail "parameters.org is required" }}{{- end -}}
+          {{- $org := $p.org -}}
+          {{- $domain := $p.domain | default $identity.domain -}}
+          {{- $storageClass := $identity.storageClass -}}
+          {{- $version := $p.chartVersion | default "17.1.7" -}}
+          {{- $size := $p.storageSize | default "10Gi" -}}
+          {{- $admin := $p.adminUsername | default "forgejo-admin" -}}
+          {{- $repos := $p.repos | default list -}}
+          {{- $mirrors := $p.vendorMirrors | default list -}}
+          {{- $admins := $p.breakGlassAdmins | default list -}}
+          {{- $schedule := $identity.pullerSchedule | default ($p.pullerSchedule | default "0 * * * *") -}}
+          {{- $ns := "forgejo" -}}
+          {{- $image := "alpine/k8s:1.36.4" -}}
+          {{- $jobGeneration := "2026-09-30" -}}
+          {{- $reposLines := "" -}}
+          {{- range $repos -}}{{- $reposLines = printf "%s%s %s\n" $reposLines .name .github -}}{{- end -}}
+          {{- $mirrorLines := "" -}}
+          {{- range $mirrors -}}{{- $mirrorLines = printf "%s%s %s\n" $mirrorLines .name .upstream -}}{{- end -}}
+          {{- $jobSuffix := (printf "%s|%s|%s|%s|%s|%s" $org $admin (join "," $admins) $reposLines $mirrorLines $jobGeneration) | sha256sum | trunc 8 -}}
+          {{- /* Ready map: composition-resource-name → its Object/Release Ready condition. */ -}}
+          {{- $ready := dict -}}
+          {{- range $k, $v := $observed -}}
+          {{- $ok := false -}}
+          {{- range (dig "status" "conditions" (list) $v.resource) -}}
+          {{- if and (eq .type "Ready") (eq .status "True") -}}{{- $ok = true -}}{{- end -}}
+          {{- end -}}
+          {{- $_ := set $ready $k $ok -}}
+          {{- end -}}
+          {{- $dbReady := eq (get $ready "dataservice" | toString) "true" -}}
+          {{- $adminReady := eq (get $ready "externalsecret-admin" | toString) "true" -}}
+          {{- $releaseReady := eq (get $ready "release" | toString) "true" -}}
+          {{- $configureReady := eq (get $ready "configure-job" | toString) "true" -}}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-dataservice
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: dataservice
+          spec:
+            readiness:
+              policy: DeriveFromObject
+            forProvider:
+              manifest:
+                apiVersion: mimir.siliconsaga.org/v1alpha1
+                kind: DataService
+                metadata:
+                  name: forgejo
+                  namespace: {{ $ns }}
+                spec:
+                  engine: postgres
+                  placement: shared
+                  # Underscores, not hyphens: this becomes a PostgreSQL identifier.
+                  databaseName: forgejo
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-sa-init
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: sa-init
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ServiceAccount
+                metadata:
+                  name: forgejo-init
+                  namespace: {{ $ns }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-sa-puller
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: sa-puller
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ServiceAccount
+                metadata:
+                  name: forgejo-puller
+                  namespace: {{ $ns }}
+                automountServiceAccountToken: false
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-role-init
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: role-init
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: Role
+                metadata:
+                  name: forgejo-init
+                  namespace: {{ $ns }}
+                rules:
+                  # create cannot be name-restricted (the name is unknown at
+                  # authorization time); get/update are pinned to the one Secret.
+                  - apiGroups: [""]
+                    resources: [secrets]
+                    verbs: [create]
+                  - apiGroups: [""]
+                    resources: [secrets]
+                    resourceNames: [forgejo-puller]
+                    verbs: [get, update]
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-rolebinding-init
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: rolebinding-init
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: RoleBinding
+                metadata:
+                  name: forgejo-init
+                  namespace: {{ $ns }}
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: Role
+                  name: forgejo-init
+                subjects:
+                  - kind: ServiceAccount
+                    name: forgejo-init
+                    namespace: {{ $ns }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-repos
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: repos-configmap
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: forgejo-repos
+                  namespace: {{ $ns }}
+                data:
+                  # <name> <github owner/repo> — what the puller pulls. Rendered
+                  # from the claim, not read from Forgejo: a repository removed
+                  # from the claim stops being pulled at the next hydration.
+                  repos: |
+                    {{- $reposLines | nindent 20 }}
+                  # <name> <upstream clone URL> — Forgejo pull-mirrors.
+                  mirrors: |
+                    {{- $mirrorLines | nindent 20 }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-externalsecret-admin
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: externalsecret-admin
+          spec:
+            readiness:
+              policy: DeriveFromObject
+            forProvider:
+              manifest:
+                apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: forgejo-admin
+                  namespace: {{ $ns }}
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: openbao-kv
+                    kind: ClusterSecretStore
+                  target:
+                    name: forgejo-admin
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                    - secretKey: username
+                      remoteRef:
+                        key: secret/forgejo
+                        property: username
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+                    - secretKey: password
+                      remoteRef:
+                        key: secret/forgejo
+                        property: password
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+          {{- range $admins }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-externalsecret-admin-{{ . }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: externalsecret-admin-{{ . }}
+          spec:
+            readiness:
+              policy: DeriveFromObject
+            forProvider:
+              manifest:
+                apiVersion: external-secrets.io/v1
+                kind: ExternalSecret
+                metadata:
+                  name: forgejo-admin-{{ . }}
+                  namespace: {{ $ns }}
+                spec:
+                  refreshInterval: 1h
+                  secretStoreRef:
+                    name: openbao-kv
+                    kind: ClusterSecretStore
+                  target:
+                    name: forgejo-admin-{{ . }}
+                    creationPolicy: Owner
+                    deletionPolicy: Retain
+                  data:
+                    - secretKey: username
+                      remoteRef:
+                        key: secret/forgejo/admins/{{ . }}
+                        property: username
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+                    - secretKey: password
+                      remoteRef:
+                        key: secret/forgejo/admins/{{ . }}
+                        property: password
+                        conversionStrategy: Default
+                        decodingStrategy: None
+                        metadataPolicy: None
+                        nullBytePolicy: Ignore
+          {{- end }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-credentials-job
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: credentials-job
+          spec:
+            readiness:
+              policy: DeriveFromCelQuery
+              celQuery: has(object.status.succeeded) && object.status.succeeded > 0
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: forgejo-credentials-{{ $jobSuffix }}
+                  namespace: {{ $ns }}
+                spec:
+                  backoffLimit: 3
+                  template:
+                    spec:
+                      restartPolicy: Never
+                      serviceAccountName: forgejo-init
+                      containers:
+                        - name: credentials
+                          image: {{ $image }}
+                          command: ["bash", "/scripts/credentials.sh"]
+                          env:
+                            - name: OPENBAO_ADDR
+                              value: http://openbao.openbao.svc:8200
+                            - name: OPENBAO_ROLE
+                              value: forgejo-init
+                            - name: ADMIN_USERNAME
+                              value: {{ $admin | quote }}
+                            - name: BREAK_GLASS_ADMINS
+                              value: {{ join " " $admins | quote }}
+                          resources:
+                            requests: {cpu: 25m, memory: 32Mi}
+                            limits: {cpu: 250m, memory: 128Mi}
+                          volumeMounts:
+                            - name: scripts
+                              mountPath: /scripts
+                      volumes:
+                        - name: scripts
+                          configMap:
+                            name: forgejo-scripts
+                            defaultMode: 0555
+          {{- if and $dbReady $adminReady }}
+          ---
+          apiVersion: helm.crossplane.io/v1beta1
+          kind: Release
+          metadata:
+            name: {{ $name }}-release
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: release
+          spec:
+            forProvider:
+              chart:
+                name: forgejo
+                # The chart lives under the forgejo-helm organisation;
+                # oci://code.forgejo.org/forgejo/forgejo is the container image.
+                repository: oci://code.forgejo.org/forgejo-helm
+                version: {{ $version | quote }}
+              namespace: {{ $ns }}
+              wait: true
+              values:
+                fullnameOverride: forgejo
+                replicaCount: 1
+                # A PVC-backed single replica cannot roll (the chart default, stated).
+                strategy:
+                  type: Recreate
+                persistence:
+                  enabled: true
+                  create: true
+                  claimName: forgejo-data
+                  size: {{ $size }}
+                  storageClass: {{ $storageClass }}
+                  accessModes: [ReadWriteOnce]
+                  # helm.sh/resource-policy: keep stays (chart default): the PVC
+                  # survives a teardown and is deleted by hand (docs/forgejo.md).
+                service:
+                  http:
+                    type: ClusterIP
+                    port: 3000
+                  ssh:
+                    type: ClusterIP
+                    port: 22
+                resources:
+                  requests: {cpu: 100m, memory: 256Mi}
+                  limits: {cpu: "1", memory: 1Gi}
+                gitea:
+                  admin:
+                    existingSecret: forgejo-admin
+                    email: {{ printf "%s@forgejo.%s" $admin $domain | quote }}
+                    passwordMode: keepUpdated
+                  metrics:
+                    enabled: true
+                    serviceMonitor:
+                      enabled: false
+                  # The chart imports only FORGEJO__* variables (README: "external
+                  # database"); a GITEA__ name would be silently ignored.
+                  additionalConfigFromEnvs:
+                    - name: FORGEJO__DATABASE__USER
+                      valueFrom:
+                        secretKeyRef:
+                          name: forgejo-dataservice
+                          key: username
+                    - name: FORGEJO__DATABASE__PASSWD
+                      valueFrom:
+                        secretKeyRef:
+                          name: forgejo-dataservice
+                          key: password
+                  config:
+                    APP_NAME: {{ printf "Forgejo — %s" $org | quote }}
+                    RUN_MODE: prod
+                    database:
+                      DB_TYPE: postgres
+                      # The shared pgBouncer (Mimir DataService, placement: shared).
+                      # SSL_MODE stated: the same libpq-versus-JDBC lesson Keycloak
+                      # recorded — pgBouncer requires TLS on the client side.
+                      HOST: mimir-postgres-pgbouncer.mimir.svc:5432
+                      NAME: forgejo
+                      SSL_MODE: require
+                    server:
+                      DOMAIN: forgejo.{{ $domain }}
+                      ROOT_URL: https://forgejo.{{ $domain }}/
+                      DISABLE_SSH: true
+                      START_SSH_SERVER: false
+                      OFFLINE_MODE: true
+                    service:
+                      DISABLE_REGISTRATION: true
+                      REQUIRE_SIGNIN_VIEW: false
+                    repository:
+                      DEFAULT_BRANCH: main
+                    metrics:
+                      ENABLED: true
+                    mirror:
+                      ENABLED: true
+          {{- end }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-route
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: route
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: gateway.networking.k8s.io/v1
+                kind: HTTPRoute
+                metadata:
+                  name: forgejo
+                  namespace: {{ $ns }}
+                spec:
+                  parentRefs:
+                    - name: traefik-gateway
+                      namespace: kube-system
+                      kind: Gateway
+                      sectionName: websecure
+                  hostnames:
+                    - "forgejo.{{ $domain }}"
+                  rules:
+                    - matches:
+                        - path:
+                            type: PathPrefix
+                            value: /
+                      backendRefs:
+                        - name: forgejo-http
+                          port: 3000
+          {{- if $releaseReady }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-configure-job
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: configure-job
+          spec:
+            readiness:
+              policy: DeriveFromCelQuery
+              celQuery: has(object.status.succeeded) && object.status.succeeded > 0
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: forgejo-configure-{{ $jobSuffix }}
+                  namespace: {{ $ns }}
+                spec:
+                  backoffLimit: 2
+                  template:
+                    spec:
+                      restartPolicy: Never
+                      serviceAccountName: forgejo-init
+                      containers:
+                        - name: configure
+                          image: {{ $image }}
+                          command: ["bash", "/scripts/configure.sh"]
+                          env:
+                            - name: FORGEJO_URL
+                              value: http://forgejo-http.{{ $ns }}.svc.cluster.local:3000
+                            - name: ORG
+                              value: {{ $org | quote }}
+                            - name: ADMIN_USERNAME
+                              value: {{ $admin | quote }}
+                            - name: BREAK_GLASS_ADMINS
+                              value: {{ join " " $admins | quote }}
+                            - name: EMAIL_DOMAIN
+                              value: forgejo.{{ $domain }}
+                            - name: NAMESPACE
+                              value: {{ $ns }}
+                            - name: PULLER_SECRET
+                              value: forgejo-puller
+                            - name: ROTATE
+                              value: ""
+                          resources:
+                            requests: {cpu: 25m, memory: 32Mi}
+                            limits: {cpu: 250m, memory: 128Mi}
+                          volumeMounts:
+                            - name: scripts
+                              mountPath: /scripts
+                            - name: admin
+                              mountPath: /etc/forgejo-admin
+                              readOnly: true
+                            - name: repos
+                              mountPath: /etc/forgejo
+                              readOnly: true
+                            {{- range $admins }}
+                            - name: admin-{{ . }}
+                              mountPath: /etc/forgejo-admins/{{ . }}
+                              readOnly: true
+                            {{- end }}
+                      volumes:
+                        - name: scripts
+                          configMap:
+                            name: forgejo-scripts
+                            defaultMode: 0555
+                        - name: admin
+                          secret:
+                            secretName: forgejo-admin
+                        - name: repos
+                          configMap:
+                            name: forgejo-repos
+                        {{- range $admins }}
+                        - name: admin-{{ . }}
+                          secret:
+                            secretName: forgejo-admin-{{ . }}
+                        {{- end }}
+          {{- end }}
+          {{- if $configureReady }}
+          ---
+          apiVersion: kubernetes.crossplane.io/v1alpha2
+          kind: Object
+          metadata:
+            name: {{ $name }}-puller
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: puller-cronjob
+          spec:
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: CronJob
+                metadata:
+                  name: forgejo-puller
+                  namespace: {{ $ns }}
+                spec:
+                  schedule: {{ $schedule | quote }}
+                  concurrencyPolicy: Forbid
+                  # The switch Phase 3's hydration flow flips while it pushes
+                  # a working tree to Forgejo main.
+                  suspend: false
+                  successfulJobsHistoryLimit: 3
+                  failedJobsHistoryLimit: 3
+                  jobTemplate:
+                    spec:
+                      backoffLimit: 0
+                      template:
+                        spec:
+                          restartPolicy: Never
+                          serviceAccountName: forgejo-puller
+                          automountServiceAccountToken: false
+                          containers:
+                            - name: puller
+                              image: {{ $image }}
+                              command: ["bash", "/scripts/puller.sh"]
+                              env:
+                                - name: FORGEJO_URL
+                                  value: http://forgejo-http.{{ $ns }}.svc.cluster.local:3000
+                                - name: ORG
+                                  value: {{ $org | quote }}
+                                - name: PULLER_USERNAME
+                                  value: {{ $admin | quote }}
+                              resources:
+                                requests: {cpu: 50m, memory: 64Mi}
+                                limits: {cpu: 500m, memory: 512Mi}
+                              volumeMounts:
+                                - name: scripts
+                                  mountPath: /scripts
+                                - name: token
+                                  mountPath: /etc/forgejo-puller
+                                  readOnly: true
+                                - name: repos
+                                  mountPath: /etc/forgejo
+                                  readOnly: true
+                                - name: work
+                                  mountPath: /tmp
+                          volumes:
+                            - name: scripts
+                              configMap:
+                                name: forgejo-scripts
+                                defaultMode: 0555
+                            - name: token
+                              secret:
+                                secretName: forgejo-puller
+                            - name: repos
+                              configMap:
+                                name: forgejo-repos
+                            - name: work
+                              emptyDir: {}
+          {{- end }}
+          {{- end }}
+
+  # ──────────────────────────────────────────────────────────
+  # Step 2: Auto-ready — Ready once every composed resource is.
+  # ──────────────────────────────────────────────────────────
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready

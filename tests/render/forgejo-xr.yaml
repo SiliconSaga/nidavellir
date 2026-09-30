@@ -1,0 +1,21 @@
+# Offline-render fixture: a bare XForgejo XR (render takes XRs, not claims),
+# carrying what the realm's claim carries. Usage: tests/render/check-forgejo.sh.
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    chartVersion: "17.1.7"
+    org: siliconsaga
+    repos:
+      - {name: nordri, github: SiliconSaga/nordri}
+      - {name: nidavellir, github: SiliconSaga/nidavellir}
+      - {name: mimir, github: SiliconSaga/mimir}
+      - {name: heimdall, github: SiliconSaga/heimdall}
+      - {name: realm-siliconsaga, github: SiliconSaga/realm-siliconsaga}
+    vendorMirrors:
+      - {name: keycloak-k8s-resources, upstream: https://github.com/keycloak/keycloak-k8s-resources.git}
+    breakGlassAdmins:
+      - cervator
+    storageSize: "10Gi"

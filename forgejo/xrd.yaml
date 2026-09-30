@@ -1,0 +1,91 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xforgejos.nidavellir.siliconsaga.org
+spec:
+  group: nidavellir.siliconsaga.org
+  names:
+    kind: XForgejo
+    plural: xforgejos
+  claimNames:
+    kind: ForgejoInstance
+    plural: forgejoinstances
+  defaultCompositionRef:
+    name: xforgejo-durable
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: "Singleton per cluster: the composition pins namespace forgejo and the workload/Service names (fullnameOverride forgejo, Service forgejo-http). Renders nothing unless cluster-identity maturity is durable or full. The claim is realm content; nidavellir supplies no org or repository names."
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  required: [org]
+                  properties:
+                    chartVersion:
+                      type: string
+                      default: "17.1.7"
+                      description: "forgejo-helm chart version, exact (17.1.7 = Forgejo 15.0.9). The chart bundles no database or cache; Postgres comes from the Mimir DataService."
+                    org:
+                      type: string
+                      description: "The Forgejo organisation the maintained repositories and vendor mirrors live in."
+                    repos:
+                      type: array
+                      description: "Maintained repositories: created empty in the org, main written only by the puller from the GitHub upstream (owner/repo)."
+                      items:
+                        type: object
+                        required: [name, github]
+                        properties:
+                          name:
+                            type: string
+                          github:
+                            type: string
+                            description: "GitHub owner/repo, fetched anonymously."
+                    vendorMirrors:
+                      type: array
+                      description: "Forgejo pull-mirrors of third-party repositories, tags included; read-only by nature."
+                      items:
+                        type: object
+                        required: [name, upstream]
+                        properties:
+                          name:
+                            type: string
+                          upstream:
+                            type: string
+                            description: "Clone URL."
+                    breakGlassAdmins:
+                      type: array
+                      description: "Local admin accounts whose passwords are born in OpenBao at secret/forgejo/admins/<user>."
+                      items:
+                        type: string
+                    adminUsername:
+                      type: string
+                      default: forgejo-admin
+                      description: "The chart's admin account, whose password is born in OpenBao at secret/forgejo and whose token the puller pushes with."
+                    pullerSchedule:
+                      type: string
+                      description: "Cron schedule for the puller. Precedence: cluster-identity pullerSchedule, then this field, then hourly (0 * * * *). A per-cluster cadence can only come from cluster-identity since the claim is hydrated unchanged everywhere."
+                    storageSize:
+                      type: string
+                      default: "10Gi"
+                      description: "Repository PVC size (the chart default, stated)."
+                    domain:
+                      type: string
+                      description: "Override the cluster-identity domain for the ingress host. When unset, the HTTPRoute host is forgejo.<cluster-identity domain>."
+                    allowTeardown:
+                      type: boolean
+                      default: false
+                      description: "Lowering cluster-identity maturity below durable while Forgejo resources exist is refused (it would delete the release, the PVC and the database). Set true, in the same hydration, to tear down deliberately. Never on GKE."
+      additionalPrinterColumns:
+      - name: READY
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Ready')].status
+      - name: SYNCED
+        type: string
+        jsonPath: .status.conditions[?(@.type=='Synced')].status

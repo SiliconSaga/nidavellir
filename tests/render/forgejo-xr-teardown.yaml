@@ -1,0 +1,15 @@
+# Offline-render fixture: the same XR with allowTeardown, the deliberate act
+# that lets a downgrade below durable render nothing while resources exist.
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    chartVersion: "17.1.7"
+    org: siliconsaga
+    repos:
+      - {name: nordri, github: SiliconSaga/nordri}
+    breakGlassAdmins:
+      - cervator
+    allowTeardown: true

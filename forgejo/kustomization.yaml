@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The Forgejo platform component (realm Forgejo day-2 design, Phase 2). ArgoCD
+# builds this directory with kustomize (apps/forgejo-app.yaml). Everything here
+# is inert on a cluster whose identity says maturity: bootstrap — the
+# composition renders nothing until durable — but it all merges and hydrates
+# everywhere so a graduation is an identity edit, not a code change.
+resources:
+  - namespace.yaml
+  - xrd.yaml
+  - composition.yaml
+configMapGenerator:
+  # The Jobs and the puller run these. Shipped as a ConfigMap rather than
+  # inlined in the composition so they stay one copy, lintable and testable.
+  # Stable name: the composition mounts it by name. A script change is a
+  # jobGeneration bump in composition.yaml (see there).
+  - name: forgejo-scripts
+    namespace: forgejo
+    files:
+      - scripts/credentials.sh
+      - scripts/configure.sh
+      - scripts/puller.sh
+      - scripts/askpass.sh
+generatorOptions:
+  disableNameSuffixHash: true
