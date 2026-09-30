@@ -89,7 +89,10 @@ if kubectl get secret -n "$NAMESPACE" "$PULLER_SECRET" >/dev/null 2>&1; then
 fi
 token_valid=false
 if $secret_present; then
-  code=$(curl -sS -o "$RESP" -w '%{http_code}' -K "$token_cfg" "$FORGEJO_URL/api/v1/user")
+  # A write:repository token has no read:user scope, so GET /user answers 401
+  # for a perfectly good token (found on the first live run). Validate against
+  # a repository-scoped endpoint instead.
+  code=$(curl -sS -o "$RESP" -w '%{http_code}' -K "$token_cfg" "$FORGEJO_URL/api/v1/repos/search?limit=1")
   [ "$code" = 200 ] && token_valid=true
 fi
 code=$(api GET "/users/$ADMIN_USERNAME/tokens")
@@ -121,7 +124,30 @@ case "$ROTATE:$secret_present:$token_valid:$named_present" in
     exit 3 ;;
 esac
 
-# ── 4. main branch protection on every maintained repository ───────────────
+# ── 4. break-glass admins, with the passwords ESO delivered ────────────────
+# Before branch protection: the push allowlist names these accounts, and
+# Forgejo rejects a rule naming a user that does not exist yet.
+for u in $BREAK_GLASS_ADMINS; do
+  pwfile="$ADMINS_DIR/$u/password"
+  [ -s "$pwfile" ] || { echo "no password mounted for break-glass admin $u at $pwfile (ExternalSecret forgejo-admin-$u not synced?)" >&2; fails=$((fails+1)); continue; }
+  code=$(api GET "/users/$u")
+  case "$code" in
+    200) echo "user $u: present" ;;
+    404)
+      jq -n --arg u "$u" --arg e "$u@$EMAIL_DOMAIN" --rawfile p "$pwfile" '{
+        username: $u, email: $e, password: ($p | rtrimstr("\n")),
+        must_change_password: false, send_notify: false, visibility: "private"}' > "$work/body.json"
+      code=$(api POST /admin/users --data @"$work/body.json")
+      rm -f "$work/body.json"
+      [ "$code" = 201 ] && echo "user $u: created" || { echo "creating user $u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; } ;;
+    *) echo "GET /users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue ;;
+  esac
+  jq -n '{admin: true, must_change_password: false}' > "$work/body.json"
+  code=$(api PATCH "/admin/users/$u" --data @"$work/body.json")
+  [ "$code" = 200 ] && echo "user $u: admin" || { echo "PATCH /admin/users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); }
+done
+
+# ── 5. main branch protection on every maintained repository ───────────────
 # Pushes allowed for the admin (the puller's token is the admin's) and the
 # break-glass accounts only. Forgejo 15 protects against force pushes for
 # everyone; there is no allowlist for that (see header).
@@ -147,7 +173,7 @@ while read -r name _; do
   esac
 done < "$REPOS_FILE"
 
-# ── 5. vendor mirrors: Forgejo pull-mirrors, tags included ─────────────────
+# ── 6. vendor mirrors: Forgejo pull-mirrors, tags included ─────────────────
 # The API cannot change a pull mirror's upstream after creation, so a mirror
 # whose original_url differs from the claim is deleted and re-migrated. A
 # mirror is derived data; nothing of ours lives in it.
@@ -179,27 +205,6 @@ while read -r name upstream; do
     *) echo "GET /repos/$ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
   esac
 done < "$MIRRORS_FILE"
-
-# ── 6. break-glass admins, with the passwords ESO delivered ────────────────
-for u in $BREAK_GLASS_ADMINS; do
-  pwfile="$ADMINS_DIR/$u/password"
-  [ -s "$pwfile" ] || { echo "no password mounted for break-glass admin $u at $pwfile (ExternalSecret forgejo-admin-$u not synced?)" >&2; fails=$((fails+1)); continue; }
-  code=$(api GET "/users/$u")
-  case "$code" in
-    200) echo "user $u: present" ;;
-    404)
-      jq -n --arg u "$u" --arg e "$u@$EMAIL_DOMAIN" --rawfile p "$pwfile" '{
-        username: $u, email: $e, password: ($p | rtrimstr("\n")),
-        must_change_password: false, send_notify: false, visibility: "private"}' > "$work/body.json"
-      code=$(api POST /admin/users --data @"$work/body.json")
-      rm -f "$work/body.json"
-      [ "$code" = 201 ] && echo "user $u: created" || { echo "creating user $u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; } ;;
-    *) echo "GET /users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue ;;
-  esac
-  jq -n '{admin: true, must_change_password: false}' > "$work/body.json"
-  code=$(api PATCH "/admin/users/$u" --data @"$work/body.json")
-  [ "$code" = 200 ] && echo "user $u: admin" || { echo "PATCH /admin/users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); }
-done
 
 [ "$fails" -eq 0 ] || { echo "forgejo configure: $fails step(s) failed" >&2; exit 1; }
 echo "forgejo configure: done"

@@ -28,7 +28,7 @@ Ordering is by observed readiness, not sync-waves. Watch it with `kubectl get da
 4. **Credentials Job** `forgejo-credentials-<hash>`: logs in to OpenBao with Kubernetes auth as role `forgejo-init` (nordri's `openbao_configure` creates it), and for each path writes a generated password **create-only** (`cas: 0`) if `secret/metadata/<path>` answers 404. A sealed OpenBao fails the Job loudly.
 5. **Helm Release** `forgejo` (chart `oci://code.forgejo.org/forgejo-helm/forgejo`, the claim's exact version), once the admin Secret and the DataService are Ready: `fullnameOverride: forgejo` (Service `forgejo-http:3000`, PVC `forgejo-data`), `strategy: Recreate`, admin from `forgejo-admin`, database over the shared pgBouncer with `SSL_MODE: require`, user and password through `FORGEJO__DATABASE__*` env from the DataService Secret, SSH off, registration off, metrics on.
 6. **HTTPRoute** `forgejo.<domain>` on the shared Gateway's `websecure` listener.
-7. **Configure Job** `forgejo-configure-<hash>`, once the Release is Ready: org; repositories created **empty**; the puller token (below); `main` branch protection (pushes only for the admin and the break-glass accounts); vendor mirrors as Forgejo pull-mirrors; break-glass accounts with the passwords ESO delivered, admin flag set. Every step is check-then-act; existing maintained repositories are never modified.
+7. **Configure Job** `forgejo-configure-<hash>`, once the Release is Ready: org; repositories created **empty**; the puller token (below); break-glass accounts with the passwords ESO delivered, admin flag set; `main` branch protection (pushes only for the admin and the break-glass accounts — the accounts must exist first, Forgejo rejects a rule naming an unknown user); vendor mirrors as Forgejo pull-mirrors. Every step is check-then-act; existing maintained repositories are never modified.
 8. **Puller CronJob** `forgejo-puller`, once the configure Job succeeded. Schedule: cluster-identity `pullerSchedule`, else the claim's, else hourly.
 
 The XR is Ready only when every composed resource is; a failed Job holds it not-Ready, which surfaces as the `forgejo` Application Degraded. Read the Job's pod log.
@@ -47,7 +47,7 @@ The XR is Ready only when every composed resource is; a failed Job holds it not-
 | absent | — | no | mints one and creates the Secret |
 | anything else | | | stops with `PullerTokenInvalid` (exit 3) |
 
-A token's value cannot be read back from Forgejo, so the Job never mints a replacement on its own — that would leave untracked tokens behind. Only `ROTATE=puller` does: revoke by name, mint, rewrite the Secret.
+"Authenticates" is checked against `GET /repos/search`, a repository-scoped endpoint: a `write:repository` token has no `read:user` scope, so `GET /user` would call a good token invalid. A token's value cannot be read back from Forgejo, so the Job never mints a replacement on its own — that would leave untracked tokens behind. Only `ROTATE=puller` does: revoke by name, mint, rewrite the Secret.
 
 ### Rotating the puller token
 
