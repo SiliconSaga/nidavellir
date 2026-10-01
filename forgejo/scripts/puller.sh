@@ -47,7 +47,9 @@ sync_repo() { # $1 = name, $2 = github owner/repo; runs in a fresh scratch clone
         git fetch -q forgejo main || { echo "$name: fetch from forgejo failed" >&2; exit 1; }
         expected=$(git rev-parse -q --verify refs/remotes/forgejo/main) || exit 1 ;;
       2) ;;
-      *) echo "$name: forgejo did not answer ls-remote (exit $ls_rc)" >&2; exit 1 ;;
+      # 128 is git's "repository not found or unreachable" — a name in the
+      # ConfigMap that the configure Job never created, or Forgejo down.
+      *) echo "$name: forgejo repository missing or unreachable (ls-remote exit $ls_rc)" >&2; exit 1 ;;
     esac
     git fetch -q github main || { echo "$name: fetch from github.com/$upstream failed" >&2; exit 1; }
     incoming=$(git rev-parse -q --verify refs/remotes/github/main) || exit 1
