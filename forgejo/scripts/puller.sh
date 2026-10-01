@@ -34,10 +34,21 @@ sync_repo() { # $1 = name, $2 = github owner/repo; runs in a fresh scratch clone
     git init -q -b main . || exit 1
     git remote add github "https://github.com/$upstream.git" || exit 1
     git remote add forgejo "$FORGEJO_URL/$ORG/$name.git" || exit 1
+    # "main does not exist yet" and "Forgejo is unreachable" must not look the
+    # same: the former means an empty lease (first push creates main), the
+    # latter would turn into a forced push against a lease of nothing. ls-remote
+    # --exit-code separates them: 2 is "ref absent", anything else non-zero is a
+    # transport or auth failure.
     expected=""
-    if git fetch -q forgejo main 2>/dev/null; then
-      expected=$(git rev-parse -q --verify refs/remotes/forgejo/main) || exit 1
-    fi
+    ls_rc=0
+    git ls-remote --exit-code forgejo refs/heads/main >/dev/null 2>&1 || ls_rc=$?
+    case "$ls_rc" in
+      0)
+        git fetch -q forgejo main || { echo "$name: fetch from forgejo failed" >&2; exit 1; }
+        expected=$(git rev-parse -q --verify refs/remotes/forgejo/main) || exit 1 ;;
+      2) ;;
+      *) echo "$name: forgejo did not answer ls-remote (exit $ls_rc)" >&2; exit 1 ;;
+    esac
     git fetch -q github main || { echo "$name: fetch from github.com/$upstream failed" >&2; exit 1; }
     incoming=$(git rev-parse -q --verify refs/remotes/github/main) || exit 1
     [ -n "$incoming" ] || { echo "$name: github main resolved to nothing" >&2; exit 1; }

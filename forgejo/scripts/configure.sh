@@ -84,16 +84,28 @@ token_cfg="$work/token.cfg"
 secret_present=false
 if kubectl get secret -n "$NAMESPACE" "$PULLER_SECRET" >/dev/null 2>&1; then
   secret_present=true
-  kubectl get secret -n "$NAMESPACE" "$PULLER_SECRET" -o jsonpath='{.data.token}' | base64 -d > "$work/token"
+  # A Secret that exists but cannot be read or decoded is not "invalid token",
+  # it is a broken Job environment — stop before the state machine below
+  # mistakes it for a token Forgejo rejected.
+  kubectl get secret -n "$NAMESPACE" "$PULLER_SECRET" -o jsonpath='{.data.token}' | base64 -d > "$work/token" \
+    || { echo "reading Secret $NAMESPACE/$PULLER_SECRET failed" >&2; exit 1; }
+  [ -s "$work/token" ] || { echo "Secret $NAMESPACE/$PULLER_SECRET carries an empty token" >&2; exit 1; }
   printf 'header = "Authorization: token %s"\n' "$(cat "$work/token")" > "$token_cfg"
 fi
 token_valid=false
 if $secret_present; then
   # A write:repository token has no read:user scope, so GET /user answers 401
   # for a perfectly good token (found on the first live run). Validate against
-  # a repository-scoped endpoint instead.
-  code=$(curl -sS -o "$RESP" -w '%{http_code}' -K "$token_cfg" "$FORGEJO_URL/api/v1/repos/search?limit=1")
-  [ "$code" = 200 ] && token_valid=true
+  # a repository-scoped endpoint instead. Only 401/403 mean "Forgejo rejected
+  # this token"; a transport failure or any other status is not evidence
+  # about the token and must not feed the mint-or-refuse decision.
+  code=$(curl -sS -o "$RESP" -w '%{http_code}' -K "$token_cfg" "$FORGEJO_URL/api/v1/repos/search?limit=1") \
+    || { echo "validating the puller token: curl failed (${code:-no status})" >&2; exit 1; }
+  case "$code" in
+    200) token_valid=true ;;
+    401|403) token_valid=false ;;
+    *) echo "validating the puller token: HTTP $code $(body)" >&2; exit 1 ;;
+  esac
 fi
 code=$(api GET "/users/$ADMIN_USERNAME/tokens")
 [ "$code" = 200 ] || { echo "listing $ADMIN_USERNAME's tokens: HTTP $code $(body)" >&2; exit 1; }

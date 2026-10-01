@@ -83,7 +83,7 @@ spec:
           {{- $schedule := $identity.pullerSchedule | default ($p.pullerSchedule | default "0 * * * *") -}}
           {{- $ns := "forgejo" -}}
           {{- $image := "alpine/k8s:1.36.4" -}}
-          {{- $jobGeneration := "2026-09-30.1" -}}
+          {{- $jobGeneration := "2026-10-01.1" -}}
           {{- $reposLines := "" -}}
           {{- range $repos -}}{{- $reposLines = printf "%s%s %s\n" $reposLines .name .github -}}{{- end -}}
           {{- $mirrorLines := "" -}}

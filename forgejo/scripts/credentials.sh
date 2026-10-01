@@ -61,6 +61,17 @@ ensure() { # $1 = KV path below secret/, $2 = username stored beside the passwor
       else
         echo "writing secret/$path returned HTTP 400: $(cat "$work/put-resp.json")" >&2; return 1
       fi ;;
+    403)
+      # The policy is create-only, so a path that came into existence between
+      # the metadata read and this write is refused as a permission error
+      # (KV v2 authorizes an existing path as update). Tell that race apart
+      # from a genuinely missing policy by looking again.
+      code=$(curl -sS -o /dev/null -w '%{http_code}' -K "$work/curl.cfg" "$OPENBAO_ADDR/v1/secret/metadata/$path")
+      if [ "$code" = 200 ]; then
+        echo "created meanwhile by another writer: secret/$path"
+      else
+        echo "writing secret/$path returned HTTP 403 and the path is still absent — is the forgejo-init policy configured (nordri openbao-configure.sh)?" >&2; return 1
+      fi ;;
     *) echo "writing secret/$path returned HTTP $code: $(cat "$work/put-resp.json")" >&2; return 1 ;;
   esac
 }
