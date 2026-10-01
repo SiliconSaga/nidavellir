@@ -76,6 +76,7 @@ kubectl kustomize forgejo > "$tmp/kustomize"
 for s in credentials.sh configure.sh puller.sh askpass.sh; do check kustomize "$tmp/kustomize" yes "$s: |"; done
 check kustomize "$tmp/kustomize" yes 'name: forgejo-scripts'
 for s in forgejo/scripts/*.sh; do bash -n "$s" || { echo "FAIL [syntax]: $s" >&2; fail=1; }; done
+bash tests/scripts/forgejo-askpass-test.sh > "$tmp/askpass" || { echo "FAIL [askpass]:" >&2; cat "$tmp/askpass" >&2; fail=1; }
 
 [[ $fail -eq 0 ]] && echo "forgejo render checks: PASS"
 exit $fail

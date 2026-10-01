@@ -5,8 +5,13 @@
 # also prompts (a missing or private upstream looks the same to it), and the
 # first live run answered that prompt with the Forgejo token; now any other
 # host gets no answer and the fetch fails as it should.
+#
+# The password prompt carries the username inside the URL
+# ("Password for 'http://forgejo-admin@host:3000': "), so the match is on the
+# host part, anchored by the closing quote — not on FORGEJO_URL verbatim.
+host="${FORGEJO_URL#*://}"
 case "$1" in
-  *"'${FORGEJO_URL}'"*) ;;
+  *"'${FORGEJO_URL}'"*|*"@${host}'"*) ;;
   *) exit 1 ;;
 esac
 case "$1" in

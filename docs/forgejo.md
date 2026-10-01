@@ -90,7 +90,13 @@ Forgejo pull-mirrors (`POST /repos/migrate`, `service: git`, `mirror: true`), ta
 
 ## Teardown
 
-Lowering cluster-identity `maturity` below `durable` while Forgejo resources exist is **refused**: the XR reports the render failure (`kubectl describe xforgejo`) and nothing is touched. To tear down on purpose, set `allowTeardown: true` on the claim in the same hydration. Everything goes except the PVC `forgejo-data` (the chart's `helm.sh/resource-policy: keep`) and what the app ships (Namespace, ConfigMap); the DataService deletion drops the database. Delete the PVC by hand. Never on GKE.
+Lowering cluster-identity `maturity` below `durable` while Forgejo resources exist is **refused**: the XR reports the render failure (`kubectl describe xforgejo`) and nothing is touched. To tear down on purpose, set `allowTeardown: true` on the claim in the same hydration. Everything composed goes; the DataService deletion drops the database. Three things stay, and what to do with each (verified 2026-09-30):
+
+- PVC `forgejo-data` (the chart's `helm.sh/resource-policy: keep`). **Delete it before re-graduating**: the database is gone, so repositories still on disk have no rows, and Forgejo refuses to create a repository whose directory already exists.
+- Secret `forgejo-puller`: created by the configure Job, not composed. Leave it; the next configure Job sees a Secret with no matching Forgejo token and mints afresh.
+- Jobs from earlier `jobGeneration`s, plus what the app ships (Namespace, `forgejo-scripts`). Delete the old Jobs by hand.
+
+Never on GKE.
 
 ## Troubleshooting
 
