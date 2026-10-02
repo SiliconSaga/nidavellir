@@ -1,0 +1,18 @@
+# The forgejo namespace.
+#
+# Declared here rather than rendered by the composition because the
+# ForgejoInstance claim (realm content, cluster/forgejo/claim.yaml) needs a
+# namespace to live in at bootstrap maturity, before the composition renders
+# anything. It therefore exists on every cluster, holding only this and the
+# forgejo-scripts ConfigMap until the cluster graduates to durable.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+  labels:
+    app.kubernetes.io/name: forgejo
+    app.kubernetes.io/part-of: nidavellir
+  annotations:
+    # Ahead of the ConfigMap and the claim, which the API server rejects
+    # outright if their namespace does not exist yet.
+    argocd.argoproj.io/sync-wave: "-1"

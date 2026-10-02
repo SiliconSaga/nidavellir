@@ -18,7 +18,7 @@
 
 ## Documentation
 
-Operational and design documentation lives in [`docs/`](docs/README.md) — TLS and certificates, Traefik version pins, Cloud IAM and DNS, testing, and the platform Gitea day-2 plan.
+Operational and design documentation lives in [`docs/`](docs/README.md) — TLS and certificates, Traefik version pins, Cloud IAM and DNS, testing, the Forgejo runbook, and the superseded platform Gitea notes.
 
 ## For contributors / agents
 

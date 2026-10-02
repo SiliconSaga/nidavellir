@@ -1,0 +1,43 @@
+# ArgoCD Application for Forgejo — the durable-tier git platform (realm Forgejo
+# day-2 design of record, 2026-09-07; Phase 2 design 2026-09-19).
+#
+# Deploys the XForgejo XRD + composition, the forgejo Namespace and the
+# forgejo-scripts ConfigMap from nidavellir's forgejo/ (kustomize). The
+# ForgejoInstance CLAIM is realm content (realm-siliconsaga cluster/forgejo/),
+# delivered by the realm root-app: nidavellir never learns the org name or the
+# repository list.
+#
+# Gated on cluster-identity maturity: at bootstrap the composition renders
+# nothing, so this app is Synced/Healthy with a Namespace and a ConfigMap and
+# no Forgejo. At durable it renders the DataService, the credentials Job, the
+# Helm release, the configure Job and the puller, in that order.
+#
+# Sync-wave 11: after Mimir (6), ESO (9) and OpenBao (10) — everything it
+# depends on — and before Keycloak (12) and Harbor (13), which will one day
+# authenticate through it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: forgejo
+  namespace: argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
+    targetRevision: HEAD
+    path: forgejo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: forgejo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true

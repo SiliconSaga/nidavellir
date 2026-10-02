@@ -7,12 +7,11 @@ kind: Kustomization
 # Add a new Application here when onboarding a new platform component.
 # Each Application should use the internal Gitea URL.
 #
-# The eventual destination is FORGEJO, not GitHub. The older guidance here
-# pointed at a GitHub transition, which is superseded by
-# docs/plans/2026-08-18-forgejo-cutover-design.md: the seed Gitea serves the
-# whole bootstrap, Forgejo is crystallised later once the platform is stable,
-# and repoURLs move to Forgejo at that point. GitHub stays the push-mirror
-# target and the off-cluster copy, not a repoURL these Applications read.
+# The eventual destination is FORGEJO, not GitHub (realm Forgejo day-2 design):
+# the seed Gitea serves the whole bootstrap; GitHub owns `main` and review; an
+# in-cluster puller writes Forgejo `main` from GitHub; and these repoURLs move
+# to Forgejo in Phase 3 of that design. forgejo-app.yaml ships the component
+# itself, inert until a cluster's identity says maturity: durable.
 resources:
   - vegvisir-app.yaml
   - mimir-app.yaml
@@ -21,6 +20,7 @@ resources:
   - ntfy-app.yaml
   - external-secrets-app.yaml
   - openbao-app.yaml
+  - forgejo-app.yaml
   - keycloak-operator-app.yaml
   - keycloak-app.yaml
   # harbor-app.yaml     # PARKED 2026-08-18: experimental, its purpose (a one-time image sync) is done, and its external-DB path has never worked. Re-enable with the sslmode fix in eitri/harbor/composition.yaml.

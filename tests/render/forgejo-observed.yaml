@@ -1,0 +1,14 @@
+# Mocked observed composed resource for `crossplane render --observed-resources`:
+# the Forgejo Helm release, Ready. Drives two seams of the composition — the
+# configure Job appears only once the release is Ready, and a downgrade below
+# durable with anything composed is refused without allowTeardown.
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: forgejo-release
+  annotations:
+    crossplane.io/composition-resource-name: release
+status:
+  conditions:
+    - type: Ready
+      status: "True"

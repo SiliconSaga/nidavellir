@@ -1,6 +1,6 @@
 # Platform Gitea — Design Notes
 
-> **Superseded 2026-09-07.** The design of record is the realm's [Forgejo day-2 design (revised)](https://github.com/SiliconSaga/realm-siliconsaga/blob/main/docs/plans/2026-09-07-forgejo-day2-design.md): GitHub stays authoritative, Forgejo is a writable in-cluster host synced by an in-cluster puller, and the seed graduates to Forgejo through a `maturity` field on cluster-identity. These notes are kept as history; the "Transition to GitHub" sequencing below is no longer the plan.
+> **Superseded 2026-09-07.** The design of record is the realm's [Forgejo day-2 design (revised)](https://github.com/SiliconSaga/realm-siliconsaga/blob/main/docs/plans/2026-09-07-forgejo-day2-design.md): GitHub stays authoritative, Forgejo is a writable in-cluster host synced by an in-cluster puller, and the seed graduates to Forgejo through a `maturity` field on cluster-identity. The implementation lives in `forgejo/`; the runbook is [forgejo.md](forgejo.md). These notes are kept as history; the "Transition to GitHub" sequencing below is no longer the plan.
 
 ## Context
 
