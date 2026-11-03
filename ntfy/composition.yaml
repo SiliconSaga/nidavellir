@@ -49,13 +49,23 @@ spec:
                  operators (the XR's metadata.name carries Crossplane's random
                  suffix). Falls back to $name when the XR was created directly. */ -}}
           {{- $claimName := get .observed.composite.resource.metadata.labels "crossplane.io/claim-name" | default $name -}}
-          {{- $replicas := 0 -}}
+          {{- /* ntfy RUNS EVERYWHERE NOW, and the cold-standby default is gone.
+                 It was replicas 0 off GKE on the reasoning that homelab had no
+                 external exposure yet, so a running ntfy had no audience. That
+                 reasoning missed who the first consumer is: heimdall's
+                 Alertmanager posts every alert to
+                 http://ntfy.ntfy.svc.cluster.local unconditionally, in every
+                 realm. With 0 replicas that Service has no endpoints, so on
+                 homelab every alert since the stack was installed failed to
+                 deliver — including AlertmanagerClusterFailedToSendAlerts
+                 itself, which is routed to the receiver it is reporting on.
+                 Delivery to the phone still needs the tailnet, but delivery to
+                 ntfy is what stops an alert from vanishing, and ntfy retains and
+                 shows what it received. replicasOverride stays for pinning a
+                 realm to 0 on purpose. */ -}}
+          {{- $replicas := 1 -}}
           {{- if hasKey $params "replicasOverride" -}}
             {{- $replicas = $params.replicasOverride -}}
-          {{- else if eq $env "gke" -}}
-            {{- $replicas = 1 -}}
-          {{- else -}}
-            {{- $replicas = 0 -}}
           {{- end -}}
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2

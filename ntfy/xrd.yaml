@@ -29,7 +29,7 @@ spec:
                     replicasOverride:
                       type: integer
                       minimum: 0
-                      description: "Optional override for replica count. When unset, the composition sets 1 on gke (active) and 0 on homelab (cold standby)."
+                      description: "Optional override for replica count. When unset, the composition runs 1 replica in every realm. Set 0 to pin a realm off on purpose — but note Alertmanager posts to this Service in every realm, so 0 means its alerts fail to deliver."
                     tailscaleHostname:
                       type: string
                       description: "Optional override for the Tailnet device hostname (MagicDNS, gke only). When UNSET, the composition derives ntfy-<env> (e.g. ntfy-gke). Do not give this an XRD default — a default fills the param and shadows the composition's env-derived fallback."
@@ -39,7 +39,7 @@ spec:
                     environment:
                       type: string
                       enum: ["homelab", "gke"]
-                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity. Controls replica count and the gke-only Tailscale Service annotations."
+                      description: "Optional override for the target environment. Defaults to EnvironmentConfig/cluster-identity. Controls the gke-only Tailscale Service annotations. It no longer controls the replica count — ntfy runs in every realm."
       additionalPrinterColumns:
       - name: READY
         type: string
