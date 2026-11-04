@@ -51,13 +51,30 @@ spec:
   # while the JVM warms. Reserving for the burst would hold most of a core
   # unused almost always; the limit covers the burst instead.
   #
-  # The 500m ceiling is deliberately BELOW the measured burst, so cold starts
-  # are throttled and therefore slower. Accepted trade rather than an oversight;
-  # revisit if startup ever meets a probe deadline.
+  # The ceiling used to be 500m — deliberately below that burst, accepting a
+  # throttled cold start, on the condition "revisit if startup ever meets a
+  # probe deadline." It did, and the bill came due on homelab: keycloak-0
+  # reached 5250 restarts in 35 days while every other pod on the node sat
+  # between 15 and 30.
+  #
+  # The mechanism is a loop that feeds itself. The operator's default liveness
+  # probe allows one second per check and three consecutive failures, and it
+  # takes over the moment the startup probe hands off — while the JVM is still
+  # JIT-warming and throttled to two thirds of the CPU it is asking for. A
+  # /health/live that misses three one-second deadlines gets the container
+  # killed, which forces another cold start, which is throttled again. Once
+  # the loop starts it sustains itself: 78 of those restarts landed in the
+  # eight hours before it happened to settle.
+  #
+  # A limit is a ceiling, not a reservation, so 1 core costs nothing while
+  # this idles near zero — and the node runs at 8% of 28 cores, so there is
+  # no contention to protect against. Raising the ceiling above the burst is
+  # cheaper than reaching for spec.unsupported.podTemplate to loosen probes
+  # the operator owns.
   resources:
     requests:
       cpu: 25m
       memory: 600Mi
     limits:
-      cpu: 500m
+      cpu: 1000m
       memory: 1Gi
