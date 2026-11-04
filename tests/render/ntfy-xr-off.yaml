@@ -1,0 +1,15 @@
+# Offline-render fixture: ntfy pinned off on purpose.
+#
+# replicasOverride is the only remaining way to get 0 replicas, and it exists so
+# a realm can decline ntfy deliberately rather than by inheriting a default. The
+# check asserts the escape hatch still works, so that removing the old
+# env-driven 0 did not remove the ability to choose it.
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XNtfy
+metadata:
+  name: ntfy
+spec:
+  parameters:
+    tailscaleHostname: ntfy-loki
+    baseUrl: "http://ntfy-loki.tailf5b47a.ts.net"
+    replicasOverride: 0

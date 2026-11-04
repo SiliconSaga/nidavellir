@@ -5,16 +5,23 @@ metadata:
   namespace: ntfy
 spec:
   parameters:
-    # Tailscale device name defaults to "ntfy-<env>" (e.g. ntfy-gke), distinguished
-    # per environment to avoid MagicDNS collisions during failover. GKE is singular
-    # and stable; homelab exposure is deferred (two resettable boxes — name per-box,
-    # not generic "homelab", when it lands). Override tailscaleHostname for a custom name.
+    # ⚠ BOTH VALUES BELOW ARE PLACEHOLDERS, stamped per cluster at hydration by
+    # patch_nidavellir_tree (nordri/lib/patch-mimir.sh's sibling), the same way
+    # the tailscale operator's own hostname is. GKE resolves to `ntfy-gke`,
+    # unchanged. A homelab box resolves to `ntfy-<machine>`.
     #
-    # Set explicitly (rather than relying on the composition's env-derived default)
-    # so the device name is unambiguous and matches base-url below. The composition
-    # still derives ntfy-<env> when this is omitted.
-    tailscaleHostname: ntfy-gke
-    # base-url is the tailnet MagicDNS URL ntfy serves itself at (gke active hub).
-    # http is fine — the tailnet encrypts transport. When homelab exposure lands,
-    # both should become env-derived (EnvironmentConfig) rather than hardcoded here.
-    baseUrl: "http://ntfy-gke.tailf5b47a.ts.net"
+    # They were hardcoded to ntfy-gke, which is what this file's earlier note
+    # asked to fix once homelab exposure landed — "name per-box, not generic
+    # homelab" — and it mattered more than a nicety: one claim serves every
+    # realm, so a homelab cluster was requesting the tailnet device name
+    # `ntfy-gke`. Harmless only because the tailscale operator there has never
+    # started. The moment it did, two clusters would fight over one MagicDNS
+    # name and the loser's alerts would route to the wrong box.
+    #
+    # Per-box rather than per-env on purpose: homelab is several resettable
+    # machines, so `ntfy-homelab` would collide between them just as surely.
+    tailscaleHostname: ntfy-MACHINE
+    # The tailnet MagicDNS URL ntfy serves itself at. http is fine — the tailnet
+    # encrypts transport. Must match tailscaleHostname above, which is why they
+    # are stamped together.
+    baseUrl: "http://ntfy-MACHINE.tailf5b47a.ts.net"

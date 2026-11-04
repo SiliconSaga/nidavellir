@@ -1,0 +1,18 @@
+# Offline-render fixture: a bare XNtfy XR (render takes XRs, not claims).
+#
+# The hostname carries a stamped-looking per-box value rather than the claim's
+# `ntfy-MACHINE` placeholder, because by the time a cluster renders this,
+# nordri's patch_nidavellir_tree has already substituted it. A literal
+# `ntfy-MACHINE` reaching a render would be the hydration bug that test guards.
+#
+# Usage (from the nidavellir repo root, crossplane CLI + Docker required):
+#   crossplane render tests/render/ntfy-xr.yaml ntfy/composition.yaml \
+#     tests/render/functions.yaml --extra-resources tests/render/cluster-identity-homelab.yaml
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XNtfy
+metadata:
+  name: ntfy
+spec:
+  parameters:
+    tailscaleHostname: ntfy-loki
+    baseUrl: "http://ntfy-loki.tailf5b47a.ts.net"

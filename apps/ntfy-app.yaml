@@ -1,8 +1,15 @@
 # ArgoCD Application for ntfy (notification delivery, Nidavellir platform layer).
 #
 # Deploys the XNtfy XRD + Composition + Ntfy claim from the nidavellir repo's
-# ntfy/ directory. ntfy is active (replicas 1) on GKE and a cold standby
-# (replicas 0) on homelab, per the cluster-identity-driven composition.
+# ntfy/ directory. ntfy is active (replicas 1) in EVERY realm as of 2026-11-03.
+#
+# It used to be a cold standby (replicas 0) off GKE, on the reasoning that
+# homelab had no external exposure so a running ntfy had no audience. The first
+# consumer is not a phone, though — heimdall's Alertmanager posts to
+# ntfy.ntfy.svc.cluster.local in every realm, so 0 replicas meant a Service with
+# no endpoints and every homelab alert failing to deliver. Reaching the phone
+# still needs the tailnet, but reaching ntfy is what keeps an alert from
+# vanishing. Set parameters.replicasOverride to pin a realm back to 0.
 #
 # Sync-wave 6: after the Tailscale operator (wave 4) so the gke Service can be
 # exposed to the tailnet on first sync.
