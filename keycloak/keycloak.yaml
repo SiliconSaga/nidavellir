@@ -1,17 +1,6 @@
-# The Keycloak instance CR (operator-managed, Keycloak 26.6.3 — field
-# names verified against the v2beta1 schema in the vendor mirror,
-# components/keycloak-k8s-resources/kubernetes/ at tag 26.6.3;
-# v2alpha1 is deprecated there).
-#
-# DB credentials come from the Mimir DataService secret (see
-# dataservice.yaml), which publishes `username` + `password` — NOT the
-# `user` + `password` of the Percona claim secret this replaced.
-# TLS terminates at the shared traefik-gateway; Keycloak serves plain
-# HTTP in-cluster (httpEnabled) and trusts X-Forwarded-* headers from
-# the gateway (proxy.headers). Hostname is dynamic (see below): the
-# external URL is https://keycloak.cmdbee.org on GKE (wildcard TLS) and
-# http://keycloak.localhost on homelab (web listener — route rendered
-# by the sso-demo composition).
+# Operator-managed Keycloak 26.6.3 instance, v2beta1 schema (v2alpha1 is
+# deprecated). Live field names: kubectl explain keycloak.spec --api-version
+# k8s.keycloak.org/v2beta1
 apiVersion: k8s.keycloak.org/v2beta1
 kind: Keycloak
 metadata:
@@ -21,43 +10,42 @@ spec:
   instances: 1
   db:
     vendor: postgres
-    # Full JDBC URL rather than host/port/database, so sslmode is stated
-    # explicitly. Mimir's pgBouncer runs client_tls_sslmode = require, and
-    # JDBC does NOT default to TLS the way libpq's sslmode=prefer does —
-    # that exact gap took Artifactory down with "FATAL: SSL required
-    # (SQLSTATE 08P01)" after a migration whose psql-based check had passed.
+    # Full JDBC URL so sslmode is explicit: Mimir's pgBouncer requires TLS and
+    # JDBC, unlike libpq, does not negotiate it by default.
     url: jdbc:postgresql://mimir-postgres-pgbouncer.mimir.svc:5432/keycloak?sslmode=require
+    # The Mimir DataService secret publishes `username` + `password`.
     usernameSecret:
       name: keycloak-db-dataservice
       key: username
     passwordSecret:
       name: keycloak-db-dataservice
       key: password
-  # Hostname-v2 dynamic mode: the issuer follows the request host —
-  # https://keycloak.cmdbee.org via the GKE gateway, http://keycloak.localhost
-  # via the homelab web listener (the SSO demo's browser path). A pinned
-  # hostname would make the issuer unreachable from a homelab browser.
-  # Re-pinning per-env is a hardening-phase item alongside TLS.
+  # Dynamic issuer — follows the request host, so one instance serves
+  # keycloak.cmdbee.org on GKE and keycloak.localhost on homelab. Pinning it
+  # per-env is a hardening item alongside TLS.
   hostname:
     strict: false
+  # TLS terminates at the shared traefik-gateway, so serve plain HTTP
+  # in-cluster and trust its X-Forwarded-* headers.
   http:
     httpEnabled: true
   proxy:
     headers: xforwarded
-  # Sized from measurement: 6m CPU p95, 608Mi memory p95.
-  #
-  # The CPU request is a floor rather than the p95, because this is the one
-  # workload where p95 is misleading — it idles near zero but bursts to ~723m
-  # while the JVM warms. Reserving for the burst would hold most of a core
-  # unused almost always; the limit covers the burst instead.
-  #
-  # The 500m ceiling is deliberately BELOW the measured burst, so cold starts
-  # are throttled and therefore slower. Accepted trade rather than an oversight;
-  # revisit if startup ever meets a probe deadline.
+  # Cold starts are slow (JVM warm-up, a Quarkus re-augmentation, a JGroups
+  # discovery timeout) and /health/live allows only 1s per check — a timeout
+  # the CRD does not expose, so tolerance has to come from the count. 18
+  # failures at the default 10s period is three minutes: long enough that a
+  # warm-up stall is survivable, short enough to still catch a hung server.
+  livenessProbe:
+    failureThreshold: 18
+  # Sized from measurement: 6m CPU p95, 608Mi memory p95. Idles near zero but
+  # bursts to ~723m while the JVM warms, so the request is a floor and the
+  # limit carries the spike. The limit stays above that burst — throttling
+  # warm-up is what made the liveness probe fire in the first place.
   resources:
     requests:
       cpu: 25m
       memory: 600Mi
     limits:
-      cpu: 500m
+      cpu: 1000m
       memory: 1Gi
