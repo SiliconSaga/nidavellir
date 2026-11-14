@@ -36,6 +36,7 @@ spec:
                       type: array
                       description: "Decision 2 of the Phase 3 design: an org is a trust class. Exactly one canonical (maintained repositories, main protected and puller-written) and one vendor (pull-mirrors, read-only)."
                       minItems: 2
+                      maxItems: 2
                       items:
                         type: object
                         required: [name, class]

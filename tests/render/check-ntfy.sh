@@ -53,7 +53,7 @@ check off "$tmp_off" no  'replicas: 1'
 # The Service Alertmanager targets, and the PVC ntfy retains messages in, render
 # in every realm regardless of replica count — delivery is what changed, not the
 # shape of the resources.
-for f in "$tmp_home" "$tmp_gke" "$tmp_off"; do
+for f in "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"; do
     check shape "$f" yes 'name: ntfy'
     check shape "$f" yes 'namespace: ntfy'
 done
@@ -66,14 +66,16 @@ for f in "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"; do
 done
 
 # Tailnet exposure follows the identity's tailnetNode, not the environment: an
-# identity without one (plain homelab, and the gke fixture) is not exposed and
-# has no base-url.
+# identity without one (plain homelab) is not exposed and has no base-url.
 check homelab "$tmp_home" no 'tailscale.com/hostname'
 check homelab "$tmp_home" no 'tailscale.com/expose'
 check homelab "$tmp_home" no 'base-url:'
-check gke     "$tmp_gke"  no 'tailscale.com/hostname'
-check gke     "$tmp_gke"  no 'tailscale.com/expose'
-check gke     "$tmp_gke"  no 'base-url:'
+
+# The gke fixture mirrors clusters/gke-prod.yaml (tailnetNode: gke): the
+# production path exposes as ntfy-gke.
+check gke "$tmp_gke" yes 'tailscale.com/hostname: ntfy-gke'
+check gke "$tmp_gke" yes 'tailscale.com/expose'
+check gke "$tmp_gke" yes 'base-url: "http://ntfy-gke.tailf5b47a.ts.net"'
 
 # A homelab identity WITH a tailnetNode exposes as ntfy-<tailnetNode>.
 check tailnet "$tmp_tail" yes 'tailscale.com/expose'

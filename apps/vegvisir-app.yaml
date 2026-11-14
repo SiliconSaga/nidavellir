@@ -66,7 +66,7 @@ spec:
           - SkipDryRunOnMissingResource=true
           - ServerSideApply=true
   templatePatch: |
-    {{- if not (index .metadata.labels "nordri.siliconsaga.org/environment") }}{{ fail "cluster Secret lacks label nordri.siliconsaga.org/environment" }}{{ end }}
+    {{- if not (index .metadata.labels "nordri.siliconsaga.org/environment") }}{{ fail "identity: environment label missing on the in-cluster Secret" }}{{ end }}
     {{- if eq (index .metadata.labels "nordri.siliconsaga.org/environment") "gke" }}
     {{- if not (index .metadata.annotations "nordri.siliconsaga.org/gcp-project") }}{{ fail "identity: gcp-project annotation missing on the in-cluster Secret" }}{{ end }}
     spec:

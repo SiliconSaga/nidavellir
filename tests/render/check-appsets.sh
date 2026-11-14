@@ -20,7 +20,7 @@ check yes "$tmp" 'nordri.siliconsaga.org/tailnet: "true"'
 check yes "$tmp" 'fail "identity: environment label missing'
 check yes "$tmp" 'fail "identity: tailnet-node annotation missing'
 check yes "$tmp" 'fail "identity: gcp-project annotation missing'
-check yes "$tmp" 'fail "cluster Secret lacks label nordri.siliconsaga.org/environment"'
+check yes "$tmp" 'fail "identity: environment label missing on the in-cluster Secret"'
 for f in apps/vegvisir-app.yaml apps/tailscale-operator-app.yaml; do
     grep -q 'resources-finalizer' "$f" && { echo "FAIL: $f still carries the finalizer" >&2; fail=1; }
 done

@@ -83,7 +83,25 @@ EOF
 if render cluster-identity-homelab-durable.yaml "$tmp/xr-one-org.yaml" > "$tmp/one-org" 2>&1; then
     echo "FAIL [one-org]: render succeeded" >&2; fail=1
 else
-    check one-org "$tmp/one-org" yes 'orgs needs one canonical and one vendor entry'
+    check one-org "$tmp/one-org" yes 'exactly one org of each class'
+fi
+
+# two canonical entries (and no vendor) fail the render, naming the class rule.
+cat > "$tmp/xr-two-canonical.yaml" <<'EOF'
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    orgs:
+      - {name: siliconsaga, class: canonical}
+      - {name: siliconsaga-extra, class: canonical}
+EOF
+if render cluster-identity-homelab-durable.yaml "$tmp/xr-two-canonical.yaml" > "$tmp/two-canonical" 2>&1; then
+    echo "FAIL [two-canonical]: render succeeded" >&2; fail=1
+else
+    check two-canonical "$tmp/two-canonical" yes 'exactly one org of each class'
 fi
 
 # invalid maturity fails the render, naming the field.

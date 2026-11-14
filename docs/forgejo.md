@@ -75,7 +75,7 @@ Jobs are immutable and named by a hash of their inputs (orgs, role, source ref, 
 
 ## Roles
 
-The cluster `role` comes from the cluster-identity EnvironmentConfig and defaults to `prod` when absent, so a cluster that has not migrated behaves as before. The claim's `orgs` are trust classes: exactly one `canonical` (maintained repositories, `main` protected and puller-written) and one `vendor` (pull-mirrors, read-only); the render fails with `orgs needs one canonical and one vendor entry` otherwise.
+The cluster `role` comes from the cluster-identity EnvironmentConfig and defaults to `prod` when absent, so a cluster that has not migrated behaves as before. The claim's `orgs` are trust classes: exactly one `canonical` (maintained repositories, `main` protected and puller-written) and one `vendor` (pull-mirrors, read-only); the render fails with `parameters.orgs needs exactly one org of each class` otherwise (the two names must also differ). Any role other than `test` (i.e. `lab`) behaves as `prod`.
 
 - `prod`: `main` is protected on every maintained repository and the puller CronJob keeps it current from GitHub.
 - `test`: a scratch Forgejo. No puller CronJob renders, and the configure Job deletes any `main` protection rule and creates none; `main` is filled by hydration or `graduate.sh`.
@@ -93,7 +93,7 @@ The askpass helper answers only for the Forgejo host: GitHub prompts for credent
 
 ## Vendor mirrors
 
-Forgejo pull-mirrors, owned by the vendor org (`VENDOR_ORG`) rather than the canonical one (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. On 15.0.9 `original_url` carries the clone address for a `service: git` migration (verified 2026-09-30), so drift is detectable; the script still tolerates an empty value and says so.
+Forgejo pull-mirrors, owned by the vendor org (`VENDOR_ORG`) rather than the canonical one (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. On 15.0.9 `original_url` carries the clone address for a `service: git` migration (verified 2026-09-30), so drift is detectable; the script still tolerates an empty value and says so. A `siliconsaga/<mirror>` left in the canonical org from before mirrors moved to the vendor org is not touched by the script: delete it by hand.
 
 ## Teardown
 

@@ -28,6 +28,9 @@ spec:
   goTemplateOptions: ["missingkey=error"]
   syncPolicy:
     preserveResourcesOnDeletion: true
+    # create-update never deletes: a cluster whose tailnet later goes true->false
+    # keeps the adopted Application under its old hostname; de-tailnet is a manual
+    # Application delete.
     applicationsSync: create-update
   generators:
     # Only clusters whose identity names a tailnet node run the operator

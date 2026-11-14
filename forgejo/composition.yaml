@@ -73,7 +73,9 @@ spec:
           {{- $orgs := $p.orgs | default list -}}
           {{- $org := "" -}}{{- $vendorOrg := "" -}}
           {{- range $orgs -}}{{- if eq .class "canonical" -}}{{- $org = .name -}}{{- else if eq .class "vendor" -}}{{- $vendorOrg = .name -}}{{- end -}}{{- end -}}
-          {{- if or (not $org) (not $vendorOrg) -}}{{ fail "parameters.orgs needs one canonical and one vendor entry" }}{{- end -}}
+          {{- $nCanonical := 0 -}}{{- $nVendor := 0 -}}
+          {{- range $orgs -}}{{- if eq .class "canonical" -}}{{- $nCanonical = add1 $nCanonical -}}{{- else if eq .class "vendor" -}}{{- $nVendor = add1 $nVendor -}}{{- end -}}{{- end -}}
+          {{- if or (ne $nCanonical 1) (ne $nVendor 1) (eq $org $vendorOrg) -}}{{ fail "parameters.orgs needs exactly one org of each class (one canonical, one vendor) with different names" }}{{- end -}}
           {{- $role := $identity.role | default "prod" -}}
           {{- $sourceRef := $identity.sourceRef | default "main" -}}
           {{- $domain := $p.domain | default $identity.domain -}}

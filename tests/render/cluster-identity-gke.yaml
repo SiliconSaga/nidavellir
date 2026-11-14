@@ -1,7 +1,8 @@
 # Offline-render stand-in for the GKE cluster-identity EnvironmentConfig
-# (in-cluster it's applied by nordri layer4-fundamentals). Swap this in for
-# the homelab file via --extra-resources to verify the GKE-side rendering:
-# storageClass standard-rwo, HTTPRoute host openbao.cmdbee.org.
+# (in-cluster nordri's identity.sh renders it from clusters/gke-prod.yaml). Swap
+# this in for the homelab file via --extra-resources to verify the GKE-side
+# rendering: storageClass standard-rwo, HTTPRoute host openbao.cmdbee.org, and
+# ntfy exposed on the tailnet as ntfy-gke.
 apiVersion: apiextensions.crossplane.io/v1beta1
 kind: EnvironmentConfig
 metadata:
@@ -12,6 +13,8 @@ data:
   storageClass: standard-rwo
   harborRole: central
   maturity: bootstrap
-  # Stand-in for the value bootstrap stamps from GCP_PROJECT at hydration.
+  # Mirrors tailnetNode in nordri clusters/gke-prod.yaml.
+  tailnetNode: gke
+  # Stand-in for the value identity.sh resolves from the cluster's GCP project.
   gcpProject: example-project
   gcpRegion: us-east1

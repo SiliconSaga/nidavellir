@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# configure.sh — reconcile Forgejo's org, repositories, puller token, branch
+# configure.sh — reconcile Forgejo's canonical and vendor orgs, repositories,
+# puller token (not on role test), branch
 # protection, vendor mirrors and break-glass accounts from the claim. Runs after
 # the release is ready, as ServiceAccount forgejo-init, authenticating to the
 # REST API as the admin with the password ESO delivered (a mounted file, never
@@ -84,6 +85,9 @@ while read -r name upstream; do
 done < "$REPOS_FILE"
 
 # ── 3. the puller token: keep, mint, or refuse ─────────────────────────────
+if [ "$ROLE" = test ]; then
+echo "puller token: skipped (role test; no puller runs on a test cluster)"
+else
 token_cfg="$work/token.cfg"
 secret_present=false
 if kubectl get secret -n "$NAMESPACE" "$PULLER_SECRET" >/dev/null 2>&1; then
@@ -143,6 +147,7 @@ case "$ROTATE:$secret_present:$token_valid:$named_present" in
     echo "PullerTokenInvalid: Secret $NAMESPACE/$PULLER_SECRET present=$secret_present valid=$token_valid; Forgejo token '$PULLER_TOKEN_NAME' on $ADMIN_USERNAME present=$named_present. A token's value cannot be read back, so this Job will not mint another on its own: run it with ROTATE=puller (docs/forgejo.md)." >&2
     exit 3 ;;
 esac
+fi
 
 # ── 4. break-glass admins, with the passwords ESO delivered ────────────────
 # Before branch protection: the push allowlist names these accounts, and

@@ -8,7 +8,7 @@ Design + plan: [`docs/plans/2026-05-21-alert-notification-routing-design.md`](..
 
 - `xrd.yaml` / `composition.yaml` / `claim.yaml` — an `XNtfy`/`Ntfy` composite that renders the ntfy Deployment, Service, ConfigMap, and PVC via provider-kubernetes, env-aware off `EnvironmentConfig/cluster-identity`:
   - **GKE:** active (`replicas: 1`), Service exposed to the tailnet (device `ntfy-gke`).
-  - **Homelab:** cold standby (`replicas: 0`), tailnet-exposed only when the cluster identity has a `tailnetNode` (see Device naming).
+  - **Homelab:** active too (`replicas: 1` everywhere; Alertmanager posts to the Service in every realm), tailnet-exposed only when the cluster identity has a `tailnetNode` (see Device naming).
 - Deployed by ArgoCD via `../apps/ntfy-app.yaml` (sync-wave 6, after the Tailscale operator at wave 4).
 
 ## Reachability model
@@ -108,10 +108,9 @@ The grant is a **wildcard rather than a single topic** because alerts route by f
 
 ## Device naming
 
-- The exposed Service's proxy device is named from the cluster identity: `ntfy-<tailnetNode>`, where `tailnetNode` comes from EnvironmentConfig `cluster-identity`. GKE keeps `ntfy-gke`; lab and test clusters get the stamped node name. Exposure follows `tailnetNode` being non-empty, not the environment; with it empty the Service is not exposed and `base-url` is unset. Distinct names avoid MagicDNS collisions across clusters and during the active/passive failover window.
+- The exposed Service's proxy device is named from the cluster identity: `ntfy-<tailnetNode>`, where `tailnetNode` comes from EnvironmentConfig `cluster-identity`. GKE keeps `ntfy-gke` (prod clusters get the cluster name); lab clusters get no `tailnetNode` and are not exposed; only `tailnetNode: stamped` (test clusters) gets a stamped name. Exposure follows `tailnetNode` being non-empty, not the environment; with it empty the Service is not exposed and `base-url` is unset. Distinct names avoid MagicDNS collisions across clusters and during the active/passive failover window.
 - The claim carries only `tailnet` (the realm-wide MagicDNS suffix), so `base-url` is `http://ntfy-<tailnetNode>.<tailnet>` and the claim file is identical on every cluster.
 - The operator's own device lingers after a cluster is destroyed and is pruned by hand (the Task 19 script).
-- Give the **operator** a per-cluster hostname (`operatorConfig.hostname`, e.g. `tailscale-operator-gke`) once more than one cluster runs it, or the default `tailscale-operator` name collides across clusters.
 
 ## Gotchas
 
