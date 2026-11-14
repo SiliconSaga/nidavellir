@@ -1,4 +1,4 @@
-# ArgoCD Application for the Tailscale Kubernetes operator.
+# ApplicationSet for the Tailscale Kubernetes operator.
 #
 # Joins the cluster to the tailnet so Services annotated `tailscale.com/expose`
 # (e.g. ntfy on GKE) get a tailnet device + MagicDNS name — no public ingress.
@@ -11,44 +11,56 @@
 #
 # operatorConfig.hostname sets the tailnet device name for this cluster's
 # operator. It MUST be unique per cluster: the chart default `tailscale-operator`
-# means two homelab clusters sharing one nidavellir hydration would collide on a
-# single tailnet device. The placeholder `tailscale-operator-MACHINE` is rewritten
-# to the host machine name by the nordri hydration scripts (each Mac runs exactly
-# one cluster, so the machine name is a stable unique id — e.g. Idunn ->
-# `tailscale-operator-idunn`, Loki -> `tailscale-operator-loki`).
+# would collide when two clusters share one tailnet. It is built from the
+# identity's tailnet-node annotation on the `in-cluster` Secret:
+# `tailscale-operator-<tailnet-node>`.
 #
 # Sync-wave 4: before ntfy (wave 6) so the operator is ready to expose its Service.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
   name: tailscale-operator
   namespace: argo
   annotations:
     argocd.argoproj.io/sync-wave: "4"
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
-  source:
-    repoURL: https://pkgs.tailscale.com/helmcharts
-    chart: tailscale-operator
-    targetRevision: "1.98.3"
-    helm:
-      # String form (not valuesObject) to match the other Helm apps in this repo
-      # and stay compatible with older ArgoCD versions.
-      values: |-
-        operatorConfig:
-          # Rewritten to `tailscale-operator-<machine>` at hydrate time; see
-          # the header note. Left as a literal placeholder so an un-hydrated
-          # direct sync is still a syntactically valid (if non-unique) hostname.
-          hostname: tailscale-operator-MACHINE
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: tailscale
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    preserveResourcesOnDeletion: true
+    applicationsSync: create-update
+  generators:
+    # Only clusters whose identity names a tailnet node run the operator
+    # (2026-11-13 review): prod clusters by name, test clusters by stamp, labs
+    # not at all unless a test asks for it.
+    - clusters:
+        selector:
+          matchLabels:
+            nordri.siliconsaga.org/tailnet: "true"
+  template:
+    metadata:
+      name: tailscale-operator
+      namespace: argo
+      annotations:
+        argocd.argoproj.io/sync-wave: "4"
+    spec:
+      project: default
+      source:
+        repoURL: https://pkgs.tailscale.com/helmcharts
+        chart: tailscale-operator
+        targetRevision: "1.98.3"
+        helm:
+          values: |-
+            {{- if not (index .metadata.annotations "nordri.siliconsaga.org/tailnet-node") }}{{ fail "identity: tailnet-node annotation missing on the in-cluster Secret" }}{{ end }}
+            operatorConfig:
+              hostname: tailscale-operator-{{ index .metadata.annotations "nordri.siliconsaga.org/tailnet-node" }}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: tailscale
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

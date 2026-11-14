@@ -39,4 +39,6 @@ spec:
     solvers:
     - dns01:
         cloudDNS:
-          project: teralivekubernetes
+          # Placeholder: the vegvisir ApplicationSet's kustomize patch replaces this
+          # with the identity's gcp-project; nothing project-specific is committed.
+          project: set-by-the-vegvisir-applicationset

@@ -1,16 +1,17 @@
-# ArgoCD Application for Vegvísir (Nidavellir routing & TLS layer).
+# ApplicationSet for Vegvísir (Nidavellir routing & TLS layer).
 #
-# Deploys the Traefik Gateway resource and TLS primitives from this repo's
-# vegvisir/manifests/ overlays. These sit on top of Traefik (deployed by
-# Nordri/layer4).
+# Generates the `vegvisir` Application from this repo's vegvisir/manifests/
+# overlays. These sit on top of Traefik (deployed by Nordri/layer4). The overlay
+# is chosen from the cluster's identity (the `in-cluster` Secret's
+# nordri.siliconsaga.org/environment label): the homelab overlay drops the
+# LetsEncrypt issuers + the *.cmdbee.org wildcard cert (which need public DNS) and
+# pins the Gateway's websecure listener to the self-signed default cert so HTTPS
+# routes attach; the gke overlay keeps the full public-CA TLS stack. See
+# vegvisir/manifests/.
 #
-# The `path` below is environment-specific: it points at the homelab overlay by
-# default (this checkout's common case) and the nordri hydration scripts rewrite
-# `overlays/homelab` -> `overlays/$TARGET` at hydrate time (mirrors nordri's
-# app-of-apps overlay patch). The homelab overlay drops the LetsEncrypt issuers +
-# the *.cmdbee.org wildcard cert (which need public DNS) and pins the Gateway's
-# websecure listener to the self-signed default cert so HTTPS routes attach; the
-# gke overlay keeps the full public-CA TLS stack. See vegvisir/manifests/.
+# On gke the templatePatch below adds kustomize patches that set the GCP project in
+# the ClusterIssuer and in cert-manager's Workload Identity SA annotation from the
+# identity's gcp-project annotation; no project is committed to Git.
 #
 # cert-manager itself is installed by the `cert-manager-app.yaml` Application that
 # this overlay pulls in via base/ — a nested ArgoCD app synced ahead of the Gateway.
@@ -20,32 +21,67 @@
 # Sync-wave 5: so the Traefik GatewayClass has time to register before the
 # Gateway resource is applied. ArgoCD self-heals if Traefik is not yet ready.
 #
-# Source: during bootstrap ArgoCD pulls from internal Gitea. After the cluster
-# is stable, repoURL moves to FORGEJO — not GitHub. See "Repository cutover"
-# in vegvisir/README.md and docs/plans/2026-08-18-forgejo-cutover-design.md.
+# Source: the stable in-cluster git address, which points at the seed Gitea until
+# graduation repoints it at Forgejo. See "Repository cutover" in
+# vegvisir/README.md and docs/plans/2026-08-18-forgejo-cutover-design.md.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
   name: vegvisir
   namespace: argo
   annotations:
     argocd.argoproj.io/sync-wave: "5"
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
-  source:
-    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/nidavellir.git'
-    targetRevision: HEAD
-    path: vegvisir/manifests/overlays/homelab
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: kube-system
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - SkipDryRunOnMissingResource=true
-      - ServerSideApply=true
+    preserveResourcesOnDeletion: true
+    applicationsSync: create-update
+  generators:
+    - clusters:
+        selector:
+          matchExpressions:
+            - {key: nordri.siliconsaga.org/cluster, operator: Exists}
+  template:
+    metadata:
+      name: vegvisir
+      namespace: argo
+      annotations:
+        argocd.argoproj.io/sync-wave: "5"
+    spec:
+      project: default
+      source:
+        repoURL: 'http://git.gitops.svc.cluster.local:3000/siliconsaga/nidavellir.git'
+        targetRevision: HEAD
+        path: '{{ if not (index .metadata.labels "nordri.siliconsaga.org/environment") }}{{ fail "identity: environment label missing on the in-cluster Secret" }}{{ end }}vegvisir/manifests/overlays/{{ index .metadata.labels "nordri.siliconsaga.org/environment" }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: kube-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - SkipDryRunOnMissingResource=true
+          - ServerSideApply=true
+  templatePatch: |
+    {{- if eq (index .metadata.labels "nordri.siliconsaga.org/environment") "gke" }}
+    {{- if not (index .metadata.annotations "nordri.siliconsaga.org/gcp-project") }}{{ fail "identity: gcp-project annotation missing on the in-cluster Secret" }}{{ end }}
+    spec:
+      source:
+        kustomize:
+          patches:
+            - target: {group: cert-manager.io, version: v1, kind: ClusterIssuer, name: letsencrypt-dns01}
+              patch: |-
+                - op: replace
+                  path: /spec/acme/solvers/0/dns01/cloudDNS/project
+                  value: {{ index .metadata.annotations "nordri.siliconsaga.org/gcp-project" }}
+            - target: {group: argoproj.io, version: v1alpha1, kind: Application, name: cert-manager}
+              patch: |-
+                - op: add
+                  path: /spec/source/helm/parameters
+                  value:
+                    - name: serviceAccount.annotations.iam\.gke\.io/gcp-service-account
+                      value: cert-manager-dns01@{{ index .metadata.annotations "nordri.siliconsaga.org/gcp-project" }}.iam.gserviceaccount.com
+    {{- end }}
