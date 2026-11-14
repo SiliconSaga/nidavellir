@@ -70,8 +70,12 @@ spec:
           {{ fail (printf "cluster-identity maturity is %q but %d Forgejo resources are composed; rendering nothing would delete the release, its PVC and the database. Set parameters.allowTeardown: true on the claim to tear down on purpose." $maturity (len $observed)) }}
           {{- end -}}
           {{- else -}}
-          {{- if not $p.org -}}{{ fail "parameters.org is required" }}{{- end -}}
-          {{- $org := $p.org -}}
+          {{- $orgs := $p.orgs | default list -}}
+          {{- $org := "" -}}{{- $vendorOrg := "" -}}
+          {{- range $orgs -}}{{- if eq .class "canonical" -}}{{- $org = .name -}}{{- else if eq .class "vendor" -}}{{- $vendorOrg = .name -}}{{- end -}}{{- end -}}
+          {{- if or (not $org) (not $vendorOrg) -}}{{ fail "parameters.orgs needs one canonical and one vendor entry" }}{{- end -}}
+          {{- $role := $identity.role | default "prod" -}}
+          {{- $sourceRef := $identity.sourceRef | default "main" -}}
           {{- $domain := $p.domain | default $identity.domain -}}
           {{- $storageClass := $identity.storageClass -}}
           {{- $version := $p.chartVersion | default "17.1.7" -}}
@@ -83,12 +87,12 @@ spec:
           {{- $schedule := $identity.pullerSchedule | default ($p.pullerSchedule | default "0 * * * *") -}}
           {{- $ns := "forgejo" -}}
           {{- $image := "alpine/k8s:1.36.4" -}}
-          {{- $jobGeneration := "2026-10-01.2" -}}
+          {{- $jobGeneration := "2026-11-14.1" -}}
           {{- $reposLines := "" -}}
           {{- range $repos -}}{{- $reposLines = printf "%s%s %s\n" $reposLines .name .github -}}{{- end -}}
           {{- $mirrorLines := "" -}}
           {{- range $mirrors -}}{{- $mirrorLines = printf "%s%s %s\n" $mirrorLines .name .upstream -}}{{- end -}}
-          {{- $jobSuffix := (printf "%s|%s|%s|%s|%s|%s" $org $admin (join "," $admins) $reposLines $mirrorLines $jobGeneration) | sha256sum | trunc 8 -}}
+          {{- $jobSuffix := (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s" $org $vendorOrg $role $sourceRef $admin (join "," $admins) $reposLines $mirrorLines $jobGeneration) | sha256sum | trunc 8 -}}
           {{- /* Ready map: composition-resource-name → its Object/Release Ready condition. */ -}}
           {{- $ready := dict -}}
           {{- range $k, $v := $observed -}}
@@ -520,6 +524,10 @@ spec:
                               value: http://forgejo-http.{{ $ns }}.svc.cluster.local:3000
                             - name: ORG
                               value: {{ $org | quote }}
+                            - name: VENDOR_ORG
+                              value: {{ $vendorOrg | quote }}
+                            - name: ROLE
+                              value: {{ $role | quote }}
                             - name: ADMIN_USERNAME
                               value: {{ $admin | quote }}
                             - name: BREAK_GLASS_ADMINS
@@ -566,7 +574,7 @@ spec:
                             secretName: forgejo-admin-{{ . }}
                         {{- end }}
           {{- end }}
-          {{- if $configureReady }}
+          {{- if and $configureReady (ne $role "test") }}
           ---
           apiVersion: kubernetes.crossplane.io/v1alpha2
           kind: Object
@@ -609,6 +617,10 @@ spec:
                                   value: {{ $org | quote }}
                                 - name: PULLER_USERNAME
                                   value: {{ $admin | quote }}
+                                - name: ROLE
+                                  value: {{ $role | quote }}
+                                - name: SOURCE_REF
+                                  value: {{ $sourceRef | quote }}
                               resources:
                                 requests: {cpu: 50m, memory: 64Mi}
                                 limits: {cpu: 500m, memory: 512Mi}

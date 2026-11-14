@@ -7,7 +7,9 @@ metadata:
 spec:
   parameters:
     chartVersion: "17.1.7"
-    org: siliconsaga
+    orgs:
+      - {name: siliconsaga, class: canonical}
+      - {name: siliconsaga-vendor, class: vendor}
     repos:
       - {name: nordri, github: SiliconSaga/nordri}
       - {name: nidavellir, github: SiliconSaga/nidavellir}

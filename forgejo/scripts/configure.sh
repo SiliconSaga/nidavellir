@@ -17,6 +17,8 @@
 set -uo pipefail
 : "${FORGEJO_URL:=http://forgejo-http.forgejo.svc.cluster.local:3000}"
 : "${ORG:?set ORG}"
+: "${VENDOR_ORG:?set VENDOR_ORG}"
+: "${ROLE:=prod}"
 : "${ADMIN_USERNAME:=forgejo-admin}"
 : "${ADMIN_PASSWORD_FILE:=/etc/forgejo-admin/password}"
 : "${ADMINS_DIR:=/etc/forgejo-admins}"
@@ -53,16 +55,18 @@ for _ in $(seq 1 60); do
 done
 [ "$code" = 200 ] || { echo "Forgejo did not answer /api/healthz with 200 within 5 minutes (last: ${code:-none})" >&2; exit 1; }
 
-# ── 1. organisation ────────────────────────────────────────────────────────
-code=$(api GET "/orgs/$ORG")
-case "$code" in
-  200) echo "org $ORG: present" ;;
-  404)
-    jq -n --arg u "$ORG" '{username: $u, visibility: "public"}' > "$work/body.json"
-    code=$(api POST /orgs --data @"$work/body.json")
-    [ "$code" = 201 ] && echo "org $ORG: created" || { echo "creating org $ORG: HTTP $code $(body)" >&2; exit 1; } ;;
-  *) echo "GET /orgs/$ORG: HTTP $code $(body)" >&2; exit 1 ;;
-esac
+# ── 1. organisations: the canonical org and the vendor org ─────────────────
+for o in "$ORG" "$VENDOR_ORG"; do
+  code=$(api GET "/orgs/$o")
+  case "$code" in
+    200) echo "org $o: present" ;;
+    404)
+      jq -n --arg u "$o" '{username: $u, visibility: "public"}' > "$work/body.json"
+      code=$(api POST /orgs --data @"$work/body.json")
+      if [ "$code" = 201 ]; then echo "org $o: created"; else echo "creating org $o: HTTP $code $(body)" >&2; exit 1; fi ;;
+    *) echo "GET /orgs/$o: HTTP $code $(body)" >&2; exit 1 ;;
+  esac
+done
 
 # ── 2. maintained repositories, created empty ──────────────────────────────
 while read -r name upstream; do
@@ -74,7 +78,7 @@ while read -r name upstream; do
       jq -n --arg n "$name" --arg d "main is written by the puller from https://github.com/$upstream" \
         '{name: $n, description: $d, private: false, auto_init: false, default_branch: "main"}' > "$work/body.json"
       code=$(api POST "/orgs/$ORG/repos" --data @"$work/body.json")
-      [ "$code" = 201 ] && echo "repo $ORG/$name: created (empty)" || { echo "creating $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); } ;;
+      if [ "$code" = 201 ]; then echo "repo $ORG/$name: created (empty)"; else echo "creating $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); fi ;;
     *) echo "GET /repos/$ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
   esac
 done < "$REPOS_FILE"
@@ -155,19 +159,20 @@ for u in $BREAK_GLASS_ADMINS; do
         must_change_password: false, send_notify: false, visibility: "private"}' > "$work/body.json"
       code=$(api POST /admin/users --data @"$work/body.json")
       rm -f "$work/body.json"
-      [ "$code" = 201 ] && echo "user $u: created" || { echo "creating user $u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; } ;;
+      if [ "$code" = 201 ]; then echo "user $u: created"; else echo "creating user $u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; fi ;;
     *) echo "GET /users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); continue ;;
   esac
   jq -n '{admin: true, must_change_password: false}' > "$work/body.json"
   code=$(api PATCH "/admin/users/$u" --data @"$work/body.json")
-  [ "$code" = 200 ] && echo "user $u: admin" || { echo "PATCH /admin/users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); }
+  if [ "$code" = 200 ]; then echo "user $u: admin"; else echo "PATCH /admin/users/$u: HTTP $code $(body)" >&2; fails=$((fails+1)); fi
 done
 
 # ── 5. main branch protection on every maintained repository ───────────────
 # Pushes allowed for the admin (the puller's token is the admin's) and the
 # break-glass accounts only. Forgejo 15 protects against force pushes for
 # everyone; there is no allowlist for that (see header).
-printf '%s\n' "$ADMIN_USERNAME" $BREAK_GLASS_ADMINS | jq -R . | jq -sc . > "$work/allow.json"
+read -r -a admins <<<"$BREAK_GLASS_ADMINS"
+printf '%s\n' "$ADMIN_USERNAME" "${admins[@]}" | jq -R . | jq -sc . > "$work/allow.json"
 jq -n --slurpfile users "$work/allow.json" '{
   enable_push: true, enable_push_whitelist: true, push_whitelist_usernames: $users[0],
   push_whitelist_teams: [], push_whitelist_deploy_keys: false,
@@ -178,13 +183,23 @@ jq '. + {rule_name: "main"}' "$work/edit.json" > "$work/create.json"
 while read -r name _; do
   [ -z "$name" ] && continue
   code=$(api GET "/repos/$ORG/$name/branch_protections/main")
+  if [ "$ROLE" = test ]; then
+    # A test cluster's Forgejo is scratch space: hydration writes main, no rule.
+    case "$code" in
+      200) code=$(api DELETE "/repos/$ORG/$name/branch_protections/main")
+           if [ "$code" = 204 ]; then echo "protection $ORG/$name main: removed (role test)"; else echo "DELETE protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); fi ;;
+      404) echo "protection $ORG/$name main: none (role test)" ;;
+      *) echo "GET protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
+    esac
+    continue
+  fi
   case "$code" in
     200)
       code=$(api PATCH "/repos/$ORG/$name/branch_protections/main" --data @"$work/edit.json")
-      [ "$code" = 200 ] && echo "protection $ORG/$name main: reconciled" || { echo "PATCH protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); } ;;
+      if [ "$code" = 200 ]; then echo "protection $ORG/$name main: reconciled"; else echo "PATCH protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); fi ;;
     404)
       code=$(api POST "/repos/$ORG/$name/branch_protections" --data @"$work/create.json")
-      [ "$code" = 201 ] && echo "protection $ORG/$name main: created" || { echo "POST protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); } ;;
+      if [ "$code" = 201 ]; then echo "protection $ORG/$name main: created"; else echo "POST protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); fi ;;
     *) echo "GET protection $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
   esac
 done < "$REPOS_FILE"
@@ -196,31 +211,31 @@ done < "$REPOS_FILE"
 # original_url for a service: git migration (verified live); the empty case
 # is tolerated for older or different versions.
 create_mirror() { # $1 = name, $2 = upstream
-  jq -n --arg n "$1" --arg u "$2" --arg o "$ORG" '{
+  jq -n --arg n "$1" --arg u "$2" --arg o "$VENDOR_ORG" '{
     clone_addr: $u, repo_name: $n, repo_owner: $o, mirror: true, service: "git",
     private: false, wiki: false, issues: false, pull_requests: false, releases: true,
     labels: false, milestones: false, lfs: false, description: ("Pull mirror of " + $u)}' > "$work/body.json"
   code=$(api POST /repos/migrate --data @"$work/body.json")
-  [ "$code" = 201 ] && echo "mirror $ORG/$1: created from $2" || { echo "migrating $2 as $ORG/$1: HTTP $code $(body)" >&2; return 1; }
+  if [ "$code" = 201 ]; then echo "mirror $VENDOR_ORG/$1: created from $2"; else echo "migrating $2 as $VENDOR_ORG/$1: HTTP $code $(body)" >&2; return 1; fi
 }
 while read -r name upstream; do
   [ -z "$name" ] && continue
-  code=$(api GET "/repos/$ORG/$name")
+  code=$(api GET "/repos/$VENDOR_ORG/$name")
   case "$code" in
     200)
       is_mirror=$(jq -r '.mirror' "$RESP"); orig=$(jq -r '.original_url // ""' "$RESP")
       if [ "$is_mirror" = true ] && [ -z "$orig" ]; then
-        echo "mirror $ORG/$name: present (original_url empty; upstream drift is not detectable on this version)"
+        echo "mirror $VENDOR_ORG/$name: present (original_url empty; upstream drift is not detectable on this version)"
       elif [ "$is_mirror" = true ] && [ "$orig" = "$upstream" ]; then
-        echo "mirror $ORG/$name: present ($orig)"
+        echo "mirror $VENDOR_ORG/$name: present ($orig)"
       else
-        echo "mirror $ORG/$name: mirror=$is_mirror upstream=${orig:-?}, claim says $upstream — recreating"
-        code=$(api DELETE "/repos/$ORG/$name")
-        [ "$code" = 204 ] || { echo "deleting $ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; }
+        echo "mirror $VENDOR_ORG/$name: mirror=$is_mirror upstream=${orig:-?}, claim says $upstream — recreating"
+        code=$(api DELETE "/repos/$VENDOR_ORG/$name")
+        [ "$code" = 204 ] || { echo "deleting $VENDOR_ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)); continue; }
         create_mirror "$name" "$upstream" || fails=$((fails+1))
       fi ;;
     404) create_mirror "$name" "$upstream" || fails=$((fails+1)) ;;
-    *) echo "GET /repos/$ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
+    *) echo "GET /repos/$VENDOR_ORG/$name: HTTP $code $(body)" >&2; fails=$((fails+1)) ;;
   esac
 done < "$MIRRORS_FILE"
 

@@ -26,15 +26,22 @@ spec:
               properties:
                 parameters:
                   type: object
-                  required: [org]
+                  required: [orgs]
                   properties:
                     chartVersion:
                       type: string
                       default: "17.1.7"
                       description: "forgejo-helm chart version, exact (17.1.7 = Forgejo 15.0.9). The chart bundles no database or cache; Postgres comes from the Mimir DataService."
-                    org:
-                      type: string
-                      description: "The Forgejo organisation the maintained repositories and vendor mirrors live in."
+                    orgs:
+                      type: array
+                      description: "Decision 2 of the Phase 3 design: an org is a trust class. Exactly one canonical (maintained repositories, main protected and puller-written) and one vendor (pull-mirrors, read-only)."
+                      minItems: 2
+                      items:
+                        type: object
+                        required: [name, class]
+                        properties:
+                          name: {type: string}
+                          class: {type: string, enum: [canonical, vendor]}
                     repos:
                       type: array
                       description: "Maintained repositories: created empty in the org, main written only by the puller from the GitHub upstream (owner/repo)."
