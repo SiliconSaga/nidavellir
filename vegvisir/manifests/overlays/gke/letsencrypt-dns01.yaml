@@ -8,19 +8,22 @@
 # Authentication: Workload Identity, NOT a service-account key. The
 # cert-manager controller's Kubernetes SA (cert-manager/cert-manager) is
 # annotated (see cert-manager-app.yaml) to impersonate the GCP service
-# account `cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com`,
+# account `cert-manager-dns01@<gcp-project>.iam.gserviceaccount.com` (the project
+# named by the cluster identity's gcpProject value),
 # which holds `roles/dns.admin`. No `serviceAccountSecretRef` here means
 # cert-manager uses the ambient WI credentials — zero keys to store or rotate.
 #
-# GCP-side setup (one-time, reproducible — see vegvisir/docs or yggdrasil#65):
-#   gcloud iam service-accounts create cert-manager-dns01 --project teralivekubernetes
-#   gcloud projects add-iam-policy-binding teralivekubernetes \
-#     --member serviceAccount:cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com \
+# GCP-side setup (one-time, reproducible — see vegvisir/docs or yggdrasil#65).
+# Substitute the project named by the cluster identity's gcpProject value for
+# <gcp-project> below:
+#   gcloud iam service-accounts create cert-manager-dns01 --project <gcp-project>
+#   gcloud projects add-iam-policy-binding <gcp-project> \
+#     --member serviceAccount:cert-manager-dns01@<gcp-project>.iam.gserviceaccount.com \
 #     --role roles/dns.admin
 #   gcloud iam service-accounts add-iam-policy-binding \
-#     cert-manager-dns01@teralivekubernetes.iam.gserviceaccount.com \
+#     cert-manager-dns01@<gcp-project>.iam.gserviceaccount.com \
 #     --role roles/iam.workloadIdentityUser \
-#     --member 'serviceAccount:teralivekubernetes.svc.id.goog[cert-manager/cert-manager]'
+#     --member 'serviceAccount:<gcp-project>.svc.id.goog[cert-manager/cert-manager]'
 #
 # Sync-wave 15: after cert-manager is ready (wave 10), alongside the other
 # ClusterIssuers.
