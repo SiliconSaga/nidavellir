@@ -28,7 +28,7 @@ spec:
 
   # ──────────────────────────────────────────────────────────
   # Step 1: ntfy resources (ConfigMap + PVC + Deployment + Service)
-  # $env drives replica count and Tailscale Service annotations.
+  # The identity's tailnetNode (non-empty) drives Tailscale exposure and base-url.
   # $storageClass is sourced from the cluster-identity EnvironmentConfig.
   # ──────────────────────────────────────────────────────────
   - step: deploy-ntfy
@@ -42,7 +42,8 @@ spec:
         template: |
           {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
           {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
-          {{- $env := $params.environment | default $identity.environment -}}
+          {{- $tailnetNode := $identity.tailnetNode | default "" -}}
+          {{- $tailnet := $params.tailnet | default "" -}}
           {{- $storageClass := $identity.storageClass -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
           {{- /* Prefer the claim's name so in-cluster resources are predictable for
@@ -84,8 +85,8 @@ spec:
                   namespace: ntfy
                 data:
                   server.yml: |
-                    {{ if $params.baseUrl -}}
-                    base-url: "{{ $params.baseUrl }}"
+                    {{ if and $tailnetNode $tailnet -}}
+                    base-url: "http://ntfy-{{ $tailnetNode }}.{{ $tailnet }}"
                     {{ end -}}
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
@@ -211,10 +212,10 @@ spec:
                   labels:
                     app: ntfy
                     claim: {{ $claimName }}
-                  {{- if eq $env "gke" }}
+                  {{- if $tailnetNode }}
                   annotations:
                     tailscale.com/expose: "true"
-                    tailscale.com/hostname: {{ $params.tailscaleHostname | default (printf "ntfy-%s" $env) }}
+                    tailscale.com/hostname: ntfy-{{ $tailnetNode }}
                     tailscale.com/tags: "tag:ntfy"
                   {{- end }}
                 spec:

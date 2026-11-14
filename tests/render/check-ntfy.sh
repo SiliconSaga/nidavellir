@@ -30,11 +30,12 @@ check() { # $1=label $2=haystack-file $3=want(yes|no) $4=needle
     fi
 }
 
-tmp_home=$(mktemp "${TMPDIR:-/tmp}/ntfy-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/ntfy-gke.XXXXXX") tmp_off=$(mktemp "${TMPDIR:-/tmp}/ntfy-off.XXXXXX")
-trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off"' EXIT
+tmp_home=$(mktemp "${TMPDIR:-/tmp}/ntfy-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/ntfy-gke.XXXXXX") tmp_off=$(mktemp "${TMPDIR:-/tmp}/ntfy-off.XXXXXX") tmp_tail=$(mktemp "${TMPDIR:-/tmp}/ntfy-tail.XXXXXX")
+trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"' EXIT
 render homelab tests/render/ntfy-xr.yaml     > "$tmp_home"
 render gke     tests/render/ntfy-xr.yaml     > "$tmp_gke"
 render homelab tests/render/ntfy-xr-off.yaml > "$tmp_off"
+render homelab-tailnet tests/render/ntfy-xr.yaml > "$tmp_tail"
 
 # THE REGRESSION THIS GUARDS: homelab must run a replica, so the Service that
 # Alertmanager posts to actually has an endpoint.
@@ -57,17 +58,29 @@ for f in "$tmp_home" "$tmp_gke" "$tmp_off"; do
     check shape "$f" yes 'namespace: ntfy'
 done
 
-# A literal placeholder must never reach a render: nordri's
-# patch_nidavellir_tree stamps ntfy-MACHINE per box at hydration, and a survivor
-# would mean two clusters fighting over one MagicDNS name.
-for f in "$tmp_home" "$tmp_gke" "$tmp_off"; do
+# No placeholder or stale per-box literal may reach a render: the device name now
+# comes from the identity's tailnetNode, never from a stamped claim value.
+for f in "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"; do
     check placeholder "$f" no 'ntfy-MACHINE'
+    check placeholder "$f" no 'ntfy-loki'
 done
 
-# The Tailscale device annotation stays gke-only, so homelab does not advertise
-# a tailnet name it has no operator to claim.
-check homelab "$tmp_home" no  'tailscale.com/hostname'
-check gke     "$tmp_gke"  yes 'tailscale.com/hostname: ntfy-loki'
+# Tailnet exposure follows the identity's tailnetNode, not the environment: an
+# identity without one (plain homelab, and the gke fixture) is not exposed and
+# has no base-url.
+check homelab "$tmp_home" no 'tailscale.com/hostname'
+check homelab "$tmp_home" no 'tailscale.com/expose'
+check homelab "$tmp_home" no 'base-url:'
+check gke     "$tmp_gke"  no 'tailscale.com/hostname'
+check gke     "$tmp_gke"  no 'tailscale.com/expose'
+check gke     "$tmp_gke"  no 'base-url:'
+
+# A homelab identity WITH a tailnetNode exposes as ntfy-<tailnetNode>.
+check tailnet "$tmp_tail" yes 'tailscale.com/expose'
+check tailnet "$tmp_tail" yes 'tailscale.com/hostname: ntfy-homelab-test-20261113-1430'
+check tailnet "$tmp_tail" yes 'tailscale.com/tags: tag:ntfy'
+check tailnet "$tmp_tail" yes 'base-url: "http://ntfy-homelab-test-20261113-1430.tailf5b47a.ts.net"'
+check tailnet "$tmp_tail" yes 'replicas: 1'
 
 [[ $fail -eq 0 ]] && echo "ntfy render checks: PASS"
 exit $fail
