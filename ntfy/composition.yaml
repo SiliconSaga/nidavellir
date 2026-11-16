@@ -44,6 +44,12 @@ spec:
           {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
           {{- $tailnetNode := $identity.tailnetNode | default "" -}}
           {{- $tailnet := $params.tailnet | default "" -}}
+          {{- /* The derived base-url; empty when the cluster is not on the tailnet.
+                 It is also stamped on the Pod template below, so a change to the
+                 identity's tailnetNode replaces the Pod: a ConfigMap edit alone
+                 starts no rollout, and the subPath mount never sees the new file. */ -}}
+          {{- $baseUrl := "" -}}
+          {{- if and $tailnetNode $tailnet -}}{{- $baseUrl = printf "http://ntfy-%s.%s" $tailnetNode $tailnet -}}{{- end -}}
           {{- $storageClass := $identity.storageClass -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
           {{- /* Prefer the claim's name so in-cluster resources are predictable for
@@ -85,8 +91,8 @@ spec:
                   namespace: ntfy
                 data:
                   server.yml: |
-                    {{ if and $tailnetNode $tailnet -}}
-                    base-url: "http://ntfy-{{ $tailnetNode }}.{{ $tailnet }}"
+                    {{ if $baseUrl -}}
+                    base-url: "{{ $baseUrl }}"
                     {{ end -}}
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
@@ -160,6 +166,9 @@ spec:
                       labels:
                         app: ntfy
                         claim: {{ $claimName }}
+                      annotations:
+                        # Rolls the Pod when the derived base-url changes (see $baseUrl above).
+                        ntfy.siliconsaga.org/base-url: {{ $baseUrl | quote }}
                     spec:
                       containers:
                       - name: ntfy

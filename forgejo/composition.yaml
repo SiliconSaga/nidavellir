@@ -75,7 +75,8 @@ spec:
           {{- range $orgs -}}{{- if eq .class "canonical" -}}{{- $org = .name -}}{{- else if eq .class "vendor" -}}{{- $vendorOrg = .name -}}{{- end -}}{{- end -}}
           {{- $nCanonical := 0 -}}{{- $nVendor := 0 -}}
           {{- range $orgs -}}{{- if eq .class "canonical" -}}{{- $nCanonical = add1 $nCanonical -}}{{- else if eq .class "vendor" -}}{{- $nVendor = add1 $nVendor -}}{{- end -}}{{- end -}}
-          {{- if or (ne $nCanonical 1) (ne $nVendor 1) (eq $org $vendorOrg) -}}{{ fail "parameters.orgs needs exactly one org of each class (one canonical, one vendor) with different names" }}{{- end -}}
+          {{- /* Forgejo treats names differing only in case as one owner, so the comparison is case-insensitive. */ -}}
+          {{- if or (ne $nCanonical 1) (ne $nVendor 1) (eq (lower $org) (lower $vendorOrg)) -}}{{ fail "parameters.orgs needs exactly one org of each class (one canonical, one vendor) with different names" }}{{- end -}}
           {{- $role := $identity.role | default "prod" -}}
           {{- $sourceRef := $identity.sourceRef | default "main" -}}
           {{- $domain := $p.domain | default $identity.domain -}}

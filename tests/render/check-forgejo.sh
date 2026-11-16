@@ -86,6 +86,25 @@ else
     check one-org "$tmp/one-org" yes 'exactly one org of each class'
 fi
 
+# two orgs whose names differ only in case are one Forgejo owner: refused like a
+# plain duplicate, or configure.sh's mirror loop could delete a canonical repo.
+cat > "$tmp/xr-case-orgs.yaml" <<'EOF'
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    orgs:
+      - {name: siliconsaga, class: canonical}
+      - {name: SiliconSaga, class: vendor}
+EOF
+if render cluster-identity-homelab-durable.yaml "$tmp/xr-case-orgs.yaml" > "$tmp/case-orgs" 2>&1; then
+    echo "FAIL [case-orgs]: render succeeded" >&2; fail=1
+else
+    check case-orgs "$tmp/case-orgs" yes 'with different names'
+fi
+
 # two canonical entries (and no vendor) fail the render, naming the class rule.
 cat > "$tmp/xr-two-canonical.yaml" <<'EOF'
 apiVersion: nidavellir.siliconsaga.org/v1alpha1

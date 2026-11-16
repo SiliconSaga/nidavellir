@@ -69,13 +69,17 @@ done
 # identity without one (plain homelab) is not exposed and has no base-url.
 check homelab "$tmp_home" no 'tailscale.com/hostname'
 check homelab "$tmp_home" no 'tailscale.com/expose'
-check homelab "$tmp_home" no 'base-url:'
+check homelab "$tmp_home" no 'base-url: "http'
+# The Pod template carries the derived base-url (empty here), so a later
+# tailnetNode change rolls the Pod instead of leaving it on the old config.
+check homelab "$tmp_home" yes 'ntfy.siliconsaga.org/base-url: ""'
 
 # The gke fixture mirrors clusters/gke-prod.yaml (tailnetNode: gke): the
 # production path exposes as ntfy-gke.
 check gke "$tmp_gke" yes 'tailscale.com/hostname: ntfy-gke'
 check gke "$tmp_gke" yes 'tailscale.com/expose'
 check gke "$tmp_gke" yes 'base-url: "http://ntfy-gke.tailf5b47a.ts.net"'
+check gke "$tmp_gke" yes 'ntfy.siliconsaga.org/base-url: http://ntfy-gke.tailf5b47a.ts.net'
 
 # A homelab identity WITH a tailnetNode exposes as ntfy-<tailnetNode>.
 check tailnet "$tmp_tail" yes 'tailscale.com/expose'
