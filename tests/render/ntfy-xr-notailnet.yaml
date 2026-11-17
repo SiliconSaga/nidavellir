@@ -1,0 +1,11 @@
+# Offline-render fixture: a claim that names no tailnet suffix.
+#
+# Fine on a cluster whose identity has no tailnetNode (nothing to expose). On a
+# tailnet cluster it must fail the render: exposure without a base-url would
+# put a device on the tailnet with no advertised address.
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XNtfy
+metadata:
+  name: ntfy
+spec:
+  parameters: {}

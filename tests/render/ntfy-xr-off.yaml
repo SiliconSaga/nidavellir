@@ -10,6 +10,5 @@ metadata:
   name: ntfy
 spec:
   parameters:
-    tailscaleHostname: ntfy-loki
-    baseUrl: "http://ntfy-loki.tailf5b47a.ts.net"
+    tailnet: tailf5b47a.ts.net
     replicasOverride: 0

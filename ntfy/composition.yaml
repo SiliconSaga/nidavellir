@@ -28,7 +28,7 @@ spec:
 
   # ──────────────────────────────────────────────────────────
   # Step 1: ntfy resources (ConfigMap + PVC + Deployment + Service)
-  # $env drives replica count and Tailscale Service annotations.
+  # The identity's tailnetNode (non-empty) drives Tailscale exposure and base-url.
   # $storageClass is sourced from the cluster-identity EnvironmentConfig.
   # ──────────────────────────────────────────────────────────
   - step: deploy-ntfy
@@ -42,7 +42,18 @@ spec:
         template: |
           {{- $identity := index .context "apiextensions.crossplane.io/environment" -}}
           {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
-          {{- $env := $params.environment | default $identity.environment -}}
+          {{- $tailnetNode := $identity.tailnetNode | default "" -}}
+          {{- $tailnet := $params.tailnet | default "" -}}
+          {{- /* Exposure and base-url come as a pair: a tailnet cluster whose claim
+                 names no tailnet suffix would expose a device with no advertised
+                 address, so the render fails instead. */ -}}
+          {{- if and $tailnetNode (not $tailnet) -}}{{- fail (printf "ntfy: the cluster identity has tailnetNode %q but the claim sets no parameters.tailnet suffix; exposure needs both" $tailnetNode) -}}{{- end -}}
+          {{- /* The derived base-url; empty when the cluster is not on the tailnet.
+                 It is also stamped on the Pod template below, so a change to the
+                 identity's tailnetNode replaces the Pod: a ConfigMap edit alone
+                 starts no rollout, and the subPath mount never sees the new file. */ -}}
+          {{- $baseUrl := "" -}}
+          {{- if and $tailnetNode $tailnet -}}{{- $baseUrl = printf "http://ntfy-%s.%s" $tailnetNode $tailnet -}}{{- end -}}
           {{- $storageClass := $identity.storageClass -}}
           {{- $name := .observed.composite.resource.metadata.name -}}
           {{- /* Prefer the claim's name so in-cluster resources are predictable for
@@ -84,8 +95,8 @@ spec:
                   namespace: ntfy
                 data:
                   server.yml: |
-                    {{ if $params.baseUrl -}}
-                    base-url: "{{ $params.baseUrl }}"
+                    {{ if $baseUrl -}}
+                    base-url: "{{ $baseUrl }}"
                     {{ end -}}
                     auth-file: "/var/lib/ntfy/user.db"
                     auth-default-access: "deny-all"
@@ -159,6 +170,9 @@ spec:
                       labels:
                         app: ntfy
                         claim: {{ $claimName }}
+                      annotations:
+                        # Rolls the Pod when the derived base-url changes (see $baseUrl above).
+                        ntfy.siliconsaga.org/base-url: {{ $baseUrl | quote }}
                     spec:
                       containers:
                       - name: ntfy
@@ -211,10 +225,10 @@ spec:
                   labels:
                     app: ntfy
                     claim: {{ $claimName }}
-                  {{- if eq $env "gke" }}
+                  {{- if $tailnetNode }}
                   annotations:
                     tailscale.com/expose: "true"
-                    tailscale.com/hostname: {{ $params.tailscaleHostname | default (printf "ntfy-%s" $env) }}
+                    tailscale.com/hostname: ntfy-{{ $tailnetNode }}
                     tailscale.com/tags: "tag:ntfy"
                   {{- end }}
                 spec:

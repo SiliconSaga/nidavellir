@@ -5,6 +5,7 @@
 # installs from https://docs.crossplane.io/latest/cli/
 # Run from the nidavellir repo root:
 #   bash tests/render/check-sso-demo.sh
+# shellcheck disable=SC2016  # the ${SSO_DEMO_...} needles are literal grep patterns, not expansions
 set -euo pipefail
 
 command -v crossplane >/dev/null || { echo "crossplane CLI not on PATH — install from https://docs.crossplane.io/latest/cli/" >&2; exit 1; }

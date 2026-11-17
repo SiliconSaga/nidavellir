@@ -1,0 +1,24 @@
+# Mocked observed composed resources: the Helm release Ready and the configure
+# Job Ready, so the puller CronJob is the next thing the composition may emit
+# (or, on role: test, must not).
+apiVersion: helm.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: forgejo-release
+  annotations:
+    crossplane.io/composition-resource-name: release
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+---
+apiVersion: kubernetes.crossplane.io/v1alpha2
+kind: Object
+metadata:
+  name: forgejo-configure-job
+  annotations:
+    crossplane.io/composition-resource-name: configure-job
+status:
+  conditions:
+    - type: Ready
+      status: "True"

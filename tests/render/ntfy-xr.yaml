@@ -1,9 +1,7 @@
 # Offline-render fixture: a bare XNtfy XR (render takes XRs, not claims).
 #
-# The hostname carries a stamped-looking per-box value rather than the claim's
-# `ntfy-MACHINE` placeholder, because by the time a cluster renders this,
-# nordri's patch_nidavellir_tree has already substituted it. A literal
-# `ntfy-MACHINE` reaching a render would be the hydration bug that test guards.
+# The device name and base-url come from the cluster identity's tailnetNode, not
+# from this XR; only the realm-wide tailnet suffix is a parameter.
 #
 # Usage (from the nidavellir repo root, crossplane CLI + Docker required):
 #   crossplane render tests/render/ntfy-xr.yaml ntfy/composition.yaml \
@@ -14,5 +12,4 @@ metadata:
   name: ntfy
 spec:
   parameters:
-    tailscaleHostname: ntfy-loki
-    baseUrl: "http://ntfy-loki.tailf5b47a.ts.net"
+    tailnet: tailf5b47a.ts.net

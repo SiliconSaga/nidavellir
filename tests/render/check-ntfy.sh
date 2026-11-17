@@ -30,11 +30,13 @@ check() { # $1=label $2=haystack-file $3=want(yes|no) $4=needle
     fi
 }
 
-tmp_home=$(mktemp "${TMPDIR:-/tmp}/ntfy-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/ntfy-gke.XXXXXX") tmp_off=$(mktemp "${TMPDIR:-/tmp}/ntfy-off.XXXXXX")
-trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off"' EXIT
+tmp_home=$(mktemp "${TMPDIR:-/tmp}/ntfy-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/ntfy-gke.XXXXXX") tmp_off=$(mktemp "${TMPDIR:-/tmp}/ntfy-off.XXXXXX") tmp_tail=$(mktemp "${TMPDIR:-/tmp}/ntfy-tail.XXXXXX")
+tmp_nosuffix=$(mktemp "${TMPDIR:-/tmp}/ntfy-nosuffix.XXXXXX") tmp_nosuffix_tail=$(mktemp "${TMPDIR:-/tmp}/ntfy-nosuffix-tail.XXXXXX")
+trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail" "$tmp_nosuffix" "$tmp_nosuffix_tail"' EXIT
 render homelab tests/render/ntfy-xr.yaml     > "$tmp_home"
 render gke     tests/render/ntfy-xr.yaml     > "$tmp_gke"
 render homelab tests/render/ntfy-xr-off.yaml > "$tmp_off"
+render homelab-tailnet tests/render/ntfy-xr.yaml > "$tmp_tail"
 
 # THE REGRESSION THIS GUARDS: homelab must run a replica, so the Service that
 # Alertmanager posts to actually has an endpoint.
@@ -52,22 +54,53 @@ check off "$tmp_off" no  'replicas: 1'
 # The Service Alertmanager targets, and the PVC ntfy retains messages in, render
 # in every realm regardless of replica count — delivery is what changed, not the
 # shape of the resources.
-for f in "$tmp_home" "$tmp_gke" "$tmp_off"; do
+for f in "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"; do
     check shape "$f" yes 'name: ntfy'
     check shape "$f" yes 'namespace: ntfy'
 done
 
-# A literal placeholder must never reach a render: nordri's
-# patch_nidavellir_tree stamps ntfy-MACHINE per box at hydration, and a survivor
-# would mean two clusters fighting over one MagicDNS name.
-for f in "$tmp_home" "$tmp_gke" "$tmp_off"; do
+# No placeholder or stale per-box literal may reach a render: the device name now
+# comes from the identity's tailnetNode, never from a stamped claim value.
+for f in "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"; do
     check placeholder "$f" no 'ntfy-MACHINE'
+    check placeholder "$f" no 'ntfy-loki'
 done
 
-# The Tailscale device annotation stays gke-only, so homelab does not advertise
-# a tailnet name it has no operator to claim.
-check homelab "$tmp_home" no  'tailscale.com/hostname'
-check gke     "$tmp_gke"  yes 'tailscale.com/hostname: ntfy-loki'
+# Tailnet exposure follows the identity's tailnetNode, not the environment: an
+# identity without one (plain homelab) is not exposed and has no base-url.
+check homelab "$tmp_home" no 'tailscale.com/hostname'
+check homelab "$tmp_home" no 'tailscale.com/expose'
+check homelab "$tmp_home" no 'base-url: "http'
+# The Pod template carries the derived base-url (empty here), so a later
+# tailnetNode change rolls the Pod instead of leaving it on the old config.
+check homelab "$tmp_home" yes 'ntfy.siliconsaga.org/base-url: ""'
+
+# The gke fixture mirrors clusters/gke-prod.yaml (tailnetNode: gke): the
+# production path exposes as ntfy-gke.
+check gke "$tmp_gke" yes 'tailscale.com/hostname: ntfy-gke'
+check gke "$tmp_gke" yes 'tailscale.com/expose'
+check gke "$tmp_gke" yes 'base-url: "http://ntfy-gke.tailf5b47a.ts.net"'
+check gke "$tmp_gke" yes 'ntfy.siliconsaga.org/base-url: http://ntfy-gke.tailf5b47a.ts.net'
+
+# A homelab identity WITH a tailnetNode exposes as ntfy-<tailnetNode>.
+check tailnet "$tmp_tail" yes 'tailscale.com/expose'
+check tailnet "$tmp_tail" yes 'tailscale.com/hostname: ntfy-homelab-test-20261113-1430'
+check tailnet "$tmp_tail" yes 'tailscale.com/tags: tag:ntfy'
+check tailnet "$tmp_tail" yes 'base-url: "http://ntfy-homelab-test-20261113-1430.tailf5b47a.ts.net"'
+check tailnet "$tmp_tail" yes 'replicas: 1'
+
+# Exposure and base-url come as a pair. A claim without a tailnet suffix renders
+# on a cluster with no tailnetNode (nothing to expose) ...
+render homelab tests/render/ntfy-xr-notailnet.yaml > "$tmp_nosuffix"
+check nosuffix "$tmp_nosuffix" yes 'replicas: 1'
+check nosuffix "$tmp_nosuffix" no 'tailscale.com/expose'
+# ... and must fail on a tailnet cluster, instead of exposing a device with no
+# advertised address.
+if render homelab-tailnet tests/render/ntfy-xr-notailnet.yaml > "$tmp_nosuffix_tail" 2>&1; then
+    echo "FAIL [nosuffix-tailnet]: render succeeded; a tailnetNode with no tailnet suffix must fail" >&2; fail=1
+else
+    check nosuffix-tailnet "$tmp_nosuffix_tail" yes 'exposure needs both'
+fi
 
 [[ $fail -eq 0 ]] && echo "ntfy render checks: PASS"
 exit $fail

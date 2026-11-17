@@ -54,6 +54,75 @@ check configure "$tmp/configure" yes 'name: forgejo-configure-'
 check configure "$tmp/configure" yes 'mountPath: /etc/forgejo-admins/cervator'
 check configure "$tmp/configure" no  'kind: CronJob'
 
+# durable with the configure Job Ready: the puller appears, carrying the source ref; the Job knows the vendor org.
+render cluster-identity-homelab-durable.yaml tests/render/forgejo-xr.yaml tests/render/forgejo-observed-configured.yaml > "$tmp/puller"
+check puller "$tmp/puller" yes 'kind: CronJob'
+# (render output is YAML re-serialised, so scalars come back unquoted)
+check puller "$tmp/puller" yes 'name: SOURCE_REF'
+check puller "$tmp/puller" yes 'value: main'
+check puller "$tmp/puller" yes 'name: VENDOR_ORG'
+check puller "$tmp/puller" yes 'value: siliconsaga-vendor'
+
+# role: test renders no puller; the configure Job carries the role.
+render cluster-identity-homelab-test-durable.yaml tests/render/forgejo-xr.yaml tests/render/forgejo-observed-configured.yaml > "$tmp/testrole"
+check test-role "$tmp/testrole" no  'kind: CronJob'
+check test-role "$tmp/testrole" yes 'name: ROLE'
+check test-role "$tmp/testrole" yes 'value: test'
+
+# a claim with one org only fails the render, naming the rule.
+cat > "$tmp/xr-one-org.yaml" <<'EOF'
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    orgs:
+      - {name: siliconsaga, class: canonical}
+EOF
+if render cluster-identity-homelab-durable.yaml "$tmp/xr-one-org.yaml" > "$tmp/one-org" 2>&1; then
+    echo "FAIL [one-org]: render succeeded" >&2; fail=1
+else
+    check one-org "$tmp/one-org" yes 'exactly one org of each class'
+fi
+
+# two orgs whose names differ only in case are one Forgejo owner: refused like a
+# plain duplicate, or configure.sh's mirror loop could delete a canonical repo.
+cat > "$tmp/xr-case-orgs.yaml" <<'EOF'
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    orgs:
+      - {name: siliconsaga, class: canonical}
+      - {name: SiliconSaga, class: vendor}
+EOF
+if render cluster-identity-homelab-durable.yaml "$tmp/xr-case-orgs.yaml" > "$tmp/case-orgs" 2>&1; then
+    echo "FAIL [case-orgs]: render succeeded" >&2; fail=1
+else
+    check case-orgs "$tmp/case-orgs" yes 'with different names'
+fi
+
+# two canonical entries (and no vendor) fail the render, naming the class rule.
+cat > "$tmp/xr-two-canonical.yaml" <<'EOF'
+apiVersion: nidavellir.siliconsaga.org/v1alpha1
+kind: XForgejo
+metadata:
+  name: forgejo
+spec:
+  parameters:
+    orgs:
+      - {name: siliconsaga, class: canonical}
+      - {name: siliconsaga-extra, class: canonical}
+EOF
+if render cluster-identity-homelab-durable.yaml "$tmp/xr-two-canonical.yaml" > "$tmp/two-canonical" 2>&1; then
+    echo "FAIL [two-canonical]: render succeeded" >&2; fail=1
+else
+    check two-canonical "$tmp/two-canonical" yes 'exactly one org of each class'
+fi
+
 # invalid maturity fails the render, naming the field.
 if render cluster-identity-homelab-bad-maturity.yaml tests/render/forgejo-xr.yaml > "$tmp/bad" 2>&1; then
     echo "FAIL [bad-maturity]: render succeeded" >&2; fail=1

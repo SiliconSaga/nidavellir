@@ -7,7 +7,7 @@
 # fully reproducible: the mirror is declared `tier: vendor` in the realm
 # ecosystem.yaml, `ws clone` fetches it with everything else, and
 # update-embedded-git.sh pushes its real history + tags into the seed
-# Gitea — which is what makes this tag pin resolvable in-cluster.
+# Gitea under the `siliconsaga-vendor` org — which is what makes this tag pin resolvable in-cluster.
 # Version bumps = retag-sync the mirror, bump targetRevision here.
 #
 # Sync-wave 8: before the keycloak instance app (wave 12) so CRDs and
@@ -25,7 +25,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/keycloak-k8s-resources.git'
+    repoURL: 'http://git.gitops.svc.cluster.local:3000/siliconsaga-vendor/keycloak-k8s-resources.git'
     targetRevision: "26.6.3"
     path: kubernetes
     directory:

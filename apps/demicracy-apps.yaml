@@ -25,7 +25,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'http://gitea-http.gitea.svc.cluster.local:3000/nordri-admin/demicracy.git'
+    repoURL: 'http://git.gitops.svc.cluster.local:3000/siliconsaga/demicracy.git'
     targetRevision: HEAD
     path: apps
   destination:

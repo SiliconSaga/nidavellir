@@ -6,7 +6,7 @@ The runbook for `forgejo/`. The design of record is the realm's [Forgejo day-2 d
 
 `apps/forgejo-app.yaml` (sync-wave 11) builds `forgejo/` with kustomize: the `forgejo` Namespace, the `XForgejo` XRD (claim kind `ForgejoInstance`), the composition, and the `forgejo-scripts` ConfigMap (the four scripts under `forgejo/scripts/`). All of it merges and hydrates everywhere.
 
-The **claim** is realm content (`realm-siliconsaga/cluster/forgejo/claim.yaml`, delivered by the realm root-app): org, maintained repositories with their GitHub upstreams, vendor mirrors, break-glass admins. nidavellir never learns those names.
+The **claim** is realm content (`realm-siliconsaga/cluster/forgejo/claim.yaml`, delivered by the realm root-app): the two orgs (canonical and vendor), maintained repositories with their GitHub upstreams, vendor mirrors, break-glass admins. nidavellir never learns those names.
 
 The composition reads `maturity` from cluster-identity:
 
@@ -28,8 +28,8 @@ Ordering is by observed readiness, not sync-waves. Watch it with `kubectl get da
 4. **Credentials Job** `forgejo-credentials-<hash>`: logs in to OpenBao with Kubernetes auth as role `forgejo-init` (nordri's `openbao_configure` creates it), and for each path writes a generated password **create-only** (`cas: 0`) if `secret/metadata/<path>` answers 404. A sealed OpenBao fails the Job loudly.
 5. **Helm Release** `forgejo` (chart `oci://code.forgejo.org/forgejo-helm/forgejo`, the claim's exact version), once the admin Secret and the DataService are Ready: `fullnameOverride: forgejo` (Service `forgejo-http:3000`, PVC `forgejo-data`), `strategy: Recreate`, admin from `forgejo-admin`, database over the shared pgBouncer with `SSL_MODE: require`, user and password through `FORGEJO__DATABASE__*` env from the DataService Secret, SSH off, registration off, metrics on.
 6. **HTTPRoute** `forgejo.<domain>` on the shared Gateway's `websecure` listener.
-7. **Configure Job** `forgejo-configure-<hash>`, once the Release is Ready: org; repositories created **empty**; the puller token (below); break-glass accounts with the passwords ESO delivered, admin flag set; `main` branch protection (pushes only for the admin and the break-glass accounts — the accounts must exist first, Forgejo rejects a rule naming an unknown user); vendor mirrors as Forgejo pull-mirrors. Every step is check-then-act; existing maintained repositories are never modified.
-8. **Puller CronJob** `forgejo-puller`, once the configure Job succeeded. Schedule: cluster-identity `pullerSchedule`, else the claim's, else hourly.
+7. **Configure Job** `forgejo-configure-<hash>`, once the Release is Ready: both orgs (the claim's `orgs`: one `canonical`, one `vendor`); repositories created **empty** in the canonical org; the puller token (below); break-glass accounts with the passwords ESO delivered, admin flag set; `main` branch protection on role `prod` (pushes only for the admin and the break-glass accounts — the accounts must exist first, Forgejo rejects a rule naming an unknown user; role `test` removes any rule and creates none, see Roles); vendor mirrors as Forgejo pull-mirrors in the vendor org. Every step is check-then-act; existing maintained repositories are never modified.
+8. **Puller CronJob** `forgejo-puller`, once the configure Job succeeded, and only when the cluster `role` is not `test`. Schedule: cluster-identity `pullerSchedule`, else the claim's, else hourly. It receives `ROLE` and `SOURCE_REF` (cluster-identity `sourceRef`, default `main`) in its environment. `SOURCE_REF` is the interface for Phase 3b's promotion flow (realm plan Task 14, which teaches `puller.sh` to follow `live-<n>` tags); until that lands the puller reads it nowhere and mirrors GitHub `main` whatever the identity says.
 
 The XR is Ready only when every composed resource is; a failed Job holds it not-Ready, which surfaces as the `forgejo` Application Degraded. Read the Job's pod log.
 
@@ -71,7 +71,14 @@ kubectl delete job -n forgejo forgejo-rotate-puller
 
 ## Re-running a Job
 
-Jobs are immutable and named by a hash of their inputs (org, admin, break-glass list, repos, mirrors) plus a `jobGeneration` constant in the composition. A claim change makes a new Job; a **script change must bump `jobGeneration`** or the old Job keeps its name and never re-runs. To re-run the current one by hand, delete it: provider-kubernetes recreates it. Old Jobs from earlier generations linger; delete them by hand.
+Jobs are immutable and named by a hash of their inputs (orgs, role, source ref, admin, break-glass list, repos, mirrors) plus a `jobGeneration` constant in the composition. A claim change makes a new Job; a **script change must bump `jobGeneration`** or the old Job keeps its name and never re-runs. To re-run the current one by hand, delete it: provider-kubernetes recreates it. Old Jobs from earlier generations linger; delete them by hand.
+
+## Roles
+
+The cluster `role` comes from the cluster-identity EnvironmentConfig and defaults to `prod` when absent, so a cluster that has not migrated behaves as before. The claim's `orgs` are trust classes: exactly one `canonical` (maintained repositories, `main` protected and puller-written) and one `vendor` (pull-mirrors, read-only); the render fails with `parameters.orgs needs exactly one org of each class` otherwise (the two names must also differ). Any role other than `test` (i.e. `lab`) behaves as `prod`.
+
+- `prod`: `main` is protected on every maintained repository and the puller CronJob keeps it current from GitHub.
+- `test`: a scratch Forgejo. No puller CronJob renders, and the configure Job deletes any `main` protection rule and creates none; `main` is filled by hydration or `graduate.sh`.
 
 ## The puller
 
@@ -86,7 +93,7 @@ The askpass helper answers only for the Forgejo host: GitHub prompts for credent
 
 ## Vendor mirrors
 
-Forgejo pull-mirrors (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. On 15.0.9 `original_url` carries the clone address for a `service: git` migration (verified 2026-09-30), so drift is detectable; the script still tolerates an empty value and says so.
+Forgejo pull-mirrors, owned by the vendor org (`VENDOR_ORG`) rather than the canonical one (`POST /repos/migrate`, `service: git`, `mirror: true`), tags included, default interval. The API cannot change a pull mirror's upstream after creation, so a mirror whose `original_url` differs from the claim is **deleted and re-migrated** — a mirror is derived data. On 15.0.9 `original_url` carries the clone address for a `service: git` migration (verified 2026-09-30), so drift is detectable; the script still tolerates an empty value and says so. A `siliconsaga/<mirror>` left in the canonical org from before mirrors moved to the vendor org is not touched by the script: delete it by hand.
 
 ## Teardown
 
