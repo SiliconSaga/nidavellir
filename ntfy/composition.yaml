@@ -44,6 +44,10 @@ spec:
           {{- $params := .observed.composite.resource.spec.parameters | default dict -}}
           {{- $tailnetNode := $identity.tailnetNode | default "" -}}
           {{- $tailnet := $params.tailnet | default "" -}}
+          {{- /* Exposure and base-url come as a pair: a tailnet cluster whose claim
+                 names no tailnet suffix would expose a device with no advertised
+                 address, so the render fails instead. */ -}}
+          {{- if and $tailnetNode (not $tailnet) -}}{{- fail (printf "ntfy: the cluster identity has tailnetNode %q but the claim sets no parameters.tailnet suffix; exposure needs both" $tailnetNode) -}}{{- end -}}
           {{- /* The derived base-url; empty when the cluster is not on the tailnet.
                  It is also stamped on the Pod template below, so a change to the
                  identity's tailnetNode replaces the Pod: a ConfigMap edit alone

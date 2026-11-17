@@ -31,7 +31,8 @@ check() { # $1=label $2=haystack-file $3=want(yes|no) $4=needle
 }
 
 tmp_home=$(mktemp "${TMPDIR:-/tmp}/ntfy-home.XXXXXX") tmp_gke=$(mktemp "${TMPDIR:-/tmp}/ntfy-gke.XXXXXX") tmp_off=$(mktemp "${TMPDIR:-/tmp}/ntfy-off.XXXXXX") tmp_tail=$(mktemp "${TMPDIR:-/tmp}/ntfy-tail.XXXXXX")
-trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail"' EXIT
+tmp_nosuffix=$(mktemp "${TMPDIR:-/tmp}/ntfy-nosuffix.XXXXXX") tmp_nosuffix_tail=$(mktemp "${TMPDIR:-/tmp}/ntfy-nosuffix-tail.XXXXXX")
+trap 'rm -f "$tmp_home" "$tmp_gke" "$tmp_off" "$tmp_tail" "$tmp_nosuffix" "$tmp_nosuffix_tail"' EXIT
 render homelab tests/render/ntfy-xr.yaml     > "$tmp_home"
 render gke     tests/render/ntfy-xr.yaml     > "$tmp_gke"
 render homelab tests/render/ntfy-xr-off.yaml > "$tmp_off"
@@ -87,6 +88,19 @@ check tailnet "$tmp_tail" yes 'tailscale.com/hostname: ntfy-homelab-test-2026111
 check tailnet "$tmp_tail" yes 'tailscale.com/tags: tag:ntfy'
 check tailnet "$tmp_tail" yes 'base-url: "http://ntfy-homelab-test-20261113-1430.tailf5b47a.ts.net"'
 check tailnet "$tmp_tail" yes 'replicas: 1'
+
+# Exposure and base-url come as a pair. A claim without a tailnet suffix renders
+# on a cluster with no tailnetNode (nothing to expose) ...
+render homelab tests/render/ntfy-xr-notailnet.yaml > "$tmp_nosuffix"
+check nosuffix "$tmp_nosuffix" yes 'replicas: 1'
+check nosuffix "$tmp_nosuffix" no 'tailscale.com/expose'
+# ... and must fail on a tailnet cluster, instead of exposing a device with no
+# advertised address.
+if render homelab-tailnet tests/render/ntfy-xr-notailnet.yaml > "$tmp_nosuffix_tail" 2>&1; then
+    echo "FAIL [nosuffix-tailnet]: render succeeded; a tailnetNode with no tailnet suffix must fail" >&2; fail=1
+else
+    check nosuffix-tailnet "$tmp_nosuffix_tail" yes 'exposure needs both'
+fi
 
 [[ $fail -eq 0 ]] && echo "ntfy render checks: PASS"
 exit $fail
